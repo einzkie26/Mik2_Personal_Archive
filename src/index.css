@@ -758,6 +758,23 @@ button:hover, a:hover { opacity: .8; }
 @media (max-width: 1000px) {
   .portfolio-sidebar { background-color: var(--archive-ground); }
 }
+
+@media screen and (max-width: 1000px) {
+  html, body, #root { max-width: 100%; overflow-x: hidden; }
+  .portfolio-shell { width: 100%; min-width: 0; padding-left: 0; overflow-x: clip; }
+  .portfolio-sidebar { width: min(235px, 86vw); transform: translate3d(-100%, 0, 0); }
+  .portfolio-sidebar.is-open { transform: translate3d(0, 0, 0); }
+  .hero, .collection, .about, .studio, .site-footer { min-width: 0; }
+}
+
+@media screen and (max-width: 700px) {
+  .hero-main, .hero-bottom, .section-heading, .studio-heading-top { min-width: 0; }
+  .hero h1, .hero .intro, .section-heading h2, .about blockquote { overflow-wrap: anywhere; }
+  .archive-heading-actions { width: 100%; align-items: stretch; }
+  .archive-filters { width: 100%; justify-content: space-between; }
+  .archive-filters button { min-width: 0; padding-inline: 12px; }
+  .site-footer { padding-inline: 7vw; }
+}
 @media (prefers-reduced-motion: reduce) {
   .hero-top, .hero h1, .hero .intro, .hero-bottom, .writing-location i,
   .reveal-arrived, .poem-reader[open] { animation: none; }
