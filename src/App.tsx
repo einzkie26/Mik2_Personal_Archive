@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
+import { usesStableRendering } from "./lib/browser";
 import { archiveRequest, authLog, deleteArchiveEntry, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type Theme = {
@@ -12,6 +13,16 @@ type Theme = {
 };
 
 type EntryCategory = "Poem" | "Prose" | "Note";
+type CardDraft = {
+  author: string;
+  title: string;
+  body: string;
+  activeTheme: number;
+  category: EntryCategory;
+  collection: string;
+  isPublic: boolean;
+  cardImage: string;
+};
 type ArchiveEntry = {
   number: string;
   title: string;
@@ -158,7 +169,7 @@ export default function App() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileStatus, setProfileStatus] = useState("");
   const [cardImage, setCardImage] = useState("");
-  const [preparedCard, setPreparedCard] = useState<{ file: File; key: string } | null>(null);
+  const [preparedCard, setPreparedCard] = useState<{ file: File; draft: CardDraft } | null>(null);
   const [likeVoterId] = useState(getLikeVoterId);
   const [likedNumbers, setLikedNumbers] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("marginalia-liked-entries") || "[]") as string[]; } catch { return []; }
@@ -177,13 +188,23 @@ export default function App() {
   const [activeTheme, setActiveTheme] = useState(0);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;
-  const cardKey = JSON.stringify({ author, title, body, activeTheme, category, collection, isPublic, cardImage });
-  const collectionNames = Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort();
-  const visibleEntries = entries.filter((poem) =>
-    (filter === "All" || poem.category === filter) &&
-    (!collectionFilter || poem.collection === collectionFilter) &&
-    `${poem.title} ${poem.excerpt}`.toLowerCase().includes(query.toLowerCase()),
+  // Compare draft references without copying a potentially large image data URL.
+  const cardDraft = useMemo(
+    () => ({ author, title, body, activeTheme, category, collection, isPublic, cardImage }),
+    [author, title, body, activeTheme, category, collection, isPublic, cardImage],
   );
+  const collectionNames = useMemo(
+    () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
+    [entries],
+  );
+  const visibleEntries = useMemo(() => {
+    const searchQuery = query.toLowerCase();
+    return entries.filter((poem) =>
+      (filter === "All" || poem.category === filter) &&
+      (!collectionFilter || poem.collection === collectionFilter) &&
+      `${poem.title} ${poem.excerpt}`.toLowerCase().includes(searchQuery),
+    );
+  }, [entries, filter, collectionFilter, query]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -294,7 +315,7 @@ export default function App() {
   const changeColorMode = (mode: "light" | "dark") => {
     if (mode === colorMode) return;
     const update = () => setColorMode(mode);
-    if ("startViewTransition" in document) document.startViewTransition(update);
+    if (!usesStableRendering && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && "startViewTransition" in document) document.startViewTransition(update);
     else update();
   };
 
@@ -325,7 +346,7 @@ export default function App() {
   }, [isOwner]);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (usesStableRendering || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const elements = document.querySelectorAll(".section-heading, .poem-card, .about > *, .studio-heading, .editor, .card-preview");
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -345,7 +366,7 @@ export default function App() {
       observer.disconnect();
       elements.forEach((element) => element.classList.remove("reveal-waiting"));
     };
-  }, [filter, query, archiveEntries, isOwner]);
+  }, [visibleEntries, isOwner]);
 
   useEffect(() => {
     if (!isOwner) return;
@@ -366,8 +387,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner]);
 
-  const createCard = async (entry?: ArchiveEntry, format: "post" | "story" = "post") => {
+  const createCard = async (entry?: ArchiveEntry, format: "post" | "story" = "post", signal?: AbortSignal) => {
     await document.fonts.ready;
+    if (signal?.aborted) return null;
     const canvas = document.createElement("canvas");
     canvas.width = 1080;
     canvas.height = format === "story" ? 1920 : 1080;
@@ -384,6 +406,7 @@ export default function App() {
     const imageSource = entry?.image_url || cardImage;
     if (imageSource) {
       const image = await loadImage(imageSource);
+      if (signal?.aborted) return null;
       const scale = Math.min(900 / image.naturalWidth, 850 / image.naturalHeight);
       const width = image.naturalWidth * scale;
       const height = image.naturalHeight * scale;
@@ -465,19 +488,25 @@ export default function App() {
 
   useEffect(() => {
     if (!isOwner) return;
-    let cancelled = false;
-    createCard().then((blob) => {
-      if (cancelled || !blob) return;
-      const filename = (title || category).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-      setPreparedCard({ file: new File([blob], `${filename}.png`, { type: "image/png" }), key: cardKey });
-    }).catch(() => {
-      if (!cancelled) setShareStatus("The image could not be prepared. Please edit your piece and try again.");
-    });
-    return () => { cancelled = true; };
-  }, [cardKey, isOwner]);
+    const controller = new AbortController();
+    // The DOM preview stays live; encode the download only after typing pauses.
+    const timer = window.setTimeout(() => {
+      createCard(undefined, "post", controller.signal).then((blob) => {
+        if (controller.signal.aborted || !blob) return;
+        const filename = (title || category).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        setPreparedCard({ file: new File([blob], `${filename}.png`, { type: "image/png" }), draft: cardDraft });
+      }).catch(() => {
+        if (!controller.signal.aborted) setShareStatus("The image could not be prepared. Please edit your piece and try again.");
+      });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [cardDraft, isOwner]);
 
   const sharePoem = async (shouldShare = true) => {
-    if (!isOwner || !session || sharing || !body.trim() || preparedCard?.key !== cardKey) return;
+    if (!isOwner || !session || sharing || !body.trim() || preparedCard?.draft !== cardDraft) return;
     const file = preparedCard.file;
     const existing = editingNumber
       ? archiveEntries.find((entry) => entry.number === editingNumber)
@@ -520,7 +549,7 @@ export default function App() {
       setEditOpen(false);
       return;
     }
-    try { localStorage.setItem("verse-poem-draft", cardKey); } catch {}
+    try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
     setFilter("All");
     setQuery("");
     if (instagramWindow) {
@@ -679,7 +708,7 @@ export default function App() {
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
             <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); readerRef.current?.showModal(); }}>
-              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" />}<blockquote>{poem.excerpt}</blockquote></div>
+              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<blockquote>{poem.excerpt}</blockquote></div>
               <div className="entry-content">
               <div className="poem-meta">
                 <span>{poem.category}</span>
@@ -726,7 +755,7 @@ export default function App() {
           <label>Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
         </div>
         <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-pressed={activeTheme === index}>{option.name}</button>)}</div></div>
-        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || preparedCard?.key !== cardKey}>{sharing ? "Saving…" : "Save changes"}</button>
+        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
       </dialog>}
       <dialog className="poem-reader" ref={readerRef} onClick={(event) => { if (event.target === event.currentTarget) readerRef.current?.close(); }}>
         <button className="reader-close" onClick={() => readerRef.current?.close()} aria-label="Close poem">×</button>
@@ -747,7 +776,7 @@ export default function App() {
 
       <section className="about" id="about">
         <div className="about-mark" aria-hidden="true">“</div>
-        <blockquote style={{ color: poetTextColor, fontSize: `clamp(${2.5 * poetScale}rem, ${4 * poetScale}vw, ${4.5 * poetScale}rem)` }}>
+        <blockquote style={{ color: poetTextColor.toLowerCase() === "#28261f" ? "var(--archive-ink)" : poetTextColor, fontSize: `clamp(${2.5 * poetScale}rem, ${4 * poetScale}vw, ${4.5 * poetScale}rem)` }}>
           {poetQuote}
         </blockquote>
         <div className="about-copy">
@@ -801,7 +830,7 @@ export default function App() {
             <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
           </fieldset>
           <div className="studio-share-area">
-            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || !body.trim() || preparedCard?.key !== cardKey}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
+            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || !body.trim() || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
             <p>Sharing saves to your archive and downloads an image.</p>
             <small>Opens Instagram in a new tab. Create a post and select the downloaded image.</small>
             {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
