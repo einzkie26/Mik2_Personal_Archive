@@ -6,7 +6,7 @@ import ArchiveDialog from "./components/ArchiveDialog";
 import CollectionPicker from "./components/CollectionPicker";
 import FontPicker from "./components/FontPicker";
 import { usesStableRendering } from "./lib/browser";
-import { getCardFont, type CardFontId } from "./lib/cardFonts";
+import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type Theme = {
@@ -207,7 +207,7 @@ export default function App() {
     "Be the window left open,\nthe kettle still warm,\nthe light that says:\nI knew you would return.",
   );
   const [activeTheme, setActiveTheme] = useState(0);
-  const [fontFamily, setFontFamily] = useState<CardFontId>("fraunces");
+  const [fontFamily, setFontFamily] = useState<CardFontId>(defaultCardFont.id);
   const font = getCardFont(fontFamily);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;

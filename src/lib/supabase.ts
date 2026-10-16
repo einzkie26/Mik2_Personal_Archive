@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
-import { getCardFont } from "./cardFonts";
+import { defaultCardFont, getCardFont } from "./cardFonts";
 
 export const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 
@@ -54,7 +54,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
     };
     let { data: entry, error } = await database.from("archive_entries").upsert(entryData).select("*").single();
     if (error && (error.code === "PGRST204" || error.code === "42703") && /\bfont_family\b/i.test(error.message)) {
-      if (entryData.font_family !== "fraunces") throw new Error("Font choices need a database update before this piece can be saved. Apply the card fonts migration in Supabase.");
+      if (entryData.font_family !== defaultCardFont.id) throw new Error("Font choices need a database update before this piece can be saved. Apply the card fonts migration in Supabase.");
       const { font_family: _font, ...legacyEntryData } = entryData;
       ({ data: entry, error } = await database.from("archive_entries").upsert(legacyEntryData).select("*").single());
     }

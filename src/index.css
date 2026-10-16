@@ -277,7 +277,7 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 }
 .preview-inner > span { font-size: .55rem; font-weight: 600; letter-spacing: .2em; }
 .preview-inner h3 { margin: 1.4rem 0 1.5rem; font-size: clamp(1.8rem, 3vw, 3.4rem); line-height: 1; }
-.preview-inner p { margin: 0; white-space: pre-line; font-family: "Fraunces", serif; font-size: clamp(.9rem, 1.55vw, 1.4rem); line-height: 1.55; }
+.preview-inner p { margin: 0; white-space: pre-line; font-family: "Cormorant Garamond", serif; font-size: clamp(.9rem, 1.55vw, 1.4rem); line-height: 1.55; }
 .preview-inner footer { display: flex; align-items: center; gap: 1rem; margin-top: auto; font-size: .65rem; }
 .preview-inner footer i { width: 35px; height: 1px; }
 

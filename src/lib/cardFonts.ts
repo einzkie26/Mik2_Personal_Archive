@@ -1,6 +1,6 @@
 export const cardFonts = [
-  { id: "fraunces", name: "Fraunces", family: '"Fraunces", Georgia, serif' },
   { id: "cormorant", name: "Cormorant Garamond", family: '"Cormorant Garamond", Georgia, serif' },
+  { id: "fraunces", name: "Fraunces", family: '"Fraunces", Georgia, serif' },
   { id: "instrument", name: "Instrument Serif", family: '"Instrument Serif", Georgia, serif' },
   { id: "lora", name: "Lora", family: '"Lora", Georgia, serif' },
   { id: "playfair", name: "Playfair Display", family: '"Playfair Display", Georgia, serif' },
@@ -13,6 +13,8 @@ export const cardFonts = [
 
 export type CardFontId = typeof cardFonts[number]["id"];
 
+export const defaultCardFont = cardFonts[0];
+
 export function getCardFont(id?: string) {
-  return cardFonts.find((font) => font.id === id) || cardFonts[0];
+  return cardFonts.find((font) => font.id === id) || defaultCardFont;
 }
