@@ -358,7 +358,7 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .poem-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; border: 0; }
 .poem-card { min-height: 0; padding: 0; border: 1px solid var(--archive-rule); border-radius: 26px; overflow: hidden; background: var(--archive-paper); box-shadow: 0 8px 35px #28261f06; }
 .poem-card:last-child { border-right: 1px solid var(--archive-rule); }
-.quote-panel { min-height: 240px; padding: 30px 35px; display: flex; flex-direction: column; justify-content: space-between; }
+.quote-panel { position: relative; isolation: isolate; overflow: hidden; min-height: 240px; padding: 30px 35px; display: flex; flex-direction: column; justify-content: space-between; }
 .quote-panel.blush { background: var(--archive-blush); }
 .quote-panel.sage { background: var(--archive-sage); }
 .quote-panel.sand { background: #e5ddcd; }
@@ -653,14 +653,15 @@ button:hover, a:hover { opacity: .8; }
 .edit-modal-palette { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--archive-rule); }
 .edit-modal-palette .eyebrow { margin-bottom: 10px; }
 .edit-modal-palette .theme-options { flex-wrap: wrap; }
-.edit-style-preview { margin-top: 18px; padding: 20px; border: 1px solid; border-radius: 12px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
-.edit-style-preview strong { display: block; font-size: 25px; }
-.edit-style-preview p { margin: 12px 0 0; white-space: pre-line; font-size: 20px; line-height: 1.5; }
+.edit-style-preview { position: relative; isolation: isolate; margin-top: 18px; padding: 20px; border: 1px solid; border-radius: 12px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
+.edit-style-preview strong { position: relative; display: block; font-size: 25px; }
+.edit-style-preview p { position: relative; margin: 12px 0 0; white-space: pre-line; font-size: 20px; line-height: 1.5; }
 .image-upload-button { display: inline-flex; align-items: center; justify-content: center; margin: 14px 0 12px; border: 1px dashed var(--archive-rule); border-radius: 10px; padding: 12px; color: var(--archive-muted); font-size: 11px; cursor: pointer; }
 .image-upload-button input { display: none; }
 .archive-card-image { position: absolute; inset: 12% 14%; width: 72%; height: 76%; object-fit: contain; opacity: .24; mix-blend-mode: multiply; pointer-events: none; }
 .quote-panel blockquote { position: relative; z-index: 1; }
-.reader-palette { margin: -15px -5px 28px; padding: 24px; border: 1px solid; border-radius: 14px; background-image: linear-gradient(#0001, #0001); }
+.reader-palette { position: relative; isolation: isolate; overflow: hidden; margin: -15px -5px 28px; padding: 24px; border: 1px solid; border-radius: 14px; }
+.reader-palette > :not(.card-shadow-overlay) { position: relative; }
 .reader-palette > img { display: block; width: 100%; max-height: 180px; object-fit: contain; margin-bottom: 20px; }
 .reader-palette .eyebrow { color: currentColor; opacity: .7; }
 .reader-palette h2, .reader-palette .reader-body { color: currentColor; }
@@ -686,6 +687,16 @@ button:hover, a:hover { opacity: .8; }
 .studio-palette .theme-options button > span { width: 10px; }
 .studio-palette .theme-options button > .palette-swatches { display: flex; justify-content: center; width: 100%; margin-bottom: 5px; }
 .palette-help { margin: 8px 0 0; color: var(--archive-muted); font-size: 11px; line-height: 1.5; }
+.card-shadow-overlay { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: inherit; background-size: cover; background-position: center; pointer-events: none; }
+.shadow-picker { min-width: 0; margin: 24px 0; padding: 0; border: 0; }
+.shadow-picker legend { padding: 0; color: var(--archive-muted); font: 500 10px "DM Sans", sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.shadow-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.shadow-options button { min-width: 0; padding: 6px; border: 1px solid var(--archive-rule); border-radius: 10px; background: var(--archive-paper); color: var(--archive-muted); }
+.shadow-options button.selected { border-color: var(--archive-accent); box-shadow: 0 0 0 1px var(--archive-accent); color: var(--archive-ink); }
+.shadow-option-preview { position: relative; display: grid; place-items: center; height: 56px; border-radius: 5px; overflow: hidden; background: #e8dfd0; color: #777064; }
+.shadow-option-preview > svg { width: 22px; height: 22px; }
+.shadow-option-name { display: block; margin-top: 7px; min-height: 28px; font: 400 11px/1.4 "DM Sans", sans-serif; }
+.shadow-option-name small { display: block; margin-top: 1px; font-size: 9px; color: var(--archive-muted); }
 .studio-palette .palette-swatches i { width: 19px; height: 19px; flex-shrink: 0; border: 1px solid #80808044; }
 .studio-palette .palette-swatches i + i { margin-left: -4px; }
 .studio-share-area { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--archive-rule); text-align: center; }

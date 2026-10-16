@@ -5,8 +5,11 @@ import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
 import CollectionPicker from "./components/CollectionPicker";
 import FontPicker from "./components/FontPicker";
+import CardShadow from "./components/CardShadow";
+import ShadowPicker from "./components/ShadowPicker";
 import { usesStableRendering } from "./lib/browser";
 import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
+import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/cardShadows";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type Theme = {
@@ -24,6 +27,7 @@ type CardDraft = {
   body: string;
   activeTheme: number;
   fontFamily: CardFontId;
+  shadowOverlay: CardShadowId;
   category: EntryCategory;
   collection: string;
   isPublic: boolean;
@@ -47,6 +51,7 @@ type ArchiveEntry = {
   theme_ink?: string;
   theme_accent?: string;
   font_family?: string;
+  shadow_overlay?: string;
 };
 
 const latestEntryCount = 6;
@@ -208,6 +213,7 @@ export default function App() {
   );
   const [activeTheme, setActiveTheme] = useState(0);
   const [fontFamily, setFontFamily] = useState<CardFontId>(defaultCardFont.id);
+  const [shadowOverlay, setShadowOverlay] = useState<CardShadowId>("none");
   const font = getCardFont(fontFamily);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;
@@ -223,8 +229,8 @@ export default function App() {
   };
   // Compare draft references without copying a potentially large image data URL.
   const cardDraft = useMemo(
-    () => ({ author, title, body, activeTheme, fontFamily, category, collection, isPublic, cardImage }),
-    [author, title, body, activeTheme, fontFamily, category, collection, isPublic, cardImage],
+    () => ({ author, title, body, activeTheme, fontFamily, shadowOverlay, category, collection, isPublic, cardImage }),
+    [author, title, body, activeTheme, fontFamily, shadowOverlay, category, collection, isPublic, cardImage],
   );
   const collectionNames = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
@@ -423,6 +429,7 @@ export default function App() {
       setBody(parsed.body || body);
       setActiveTheme(parsed.activeTheme ?? 0);
       setFontFamily(getCardFont(parsed.fontFamily).id);
+      setShadowOverlay(getCardShadow(parsed.shadowOverlay).id);
       if (["Poem", "Prose", "Note"].includes(parsed.category)) setCategory(parsed.category);
       if (typeof parsed.collection === "string") setCollection(parsed.collection.trim() || "Personal collection");
       setCreatingCollection(false);
@@ -464,6 +471,14 @@ export default function App() {
       context.globalAlpha = .28;
       context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
       context.globalAlpha = 1;
+    }
+    const shadowSource = getCardShadowSource(entry ? entry.shadow_overlay : shadowOverlay);
+    if (shadowSource) {
+      const shadow = await loadImage(shadowSource);
+      if (signal?.aborted) return null;
+      const scale = Math.max(canvas.width / shadow.naturalWidth, canvas.height / shadow.naturalHeight);
+      const width = shadow.naturalWidth * scale, height = shadow.naturalHeight * scale;
+      context.drawImage(shadow, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
     }
     context.strokeStyle = cardTheme.accent;
     context.lineWidth = 2;
@@ -574,6 +589,7 @@ export default function App() {
       theme_ink: theme.ink,
       theme_accent: theme.accent,
       font_family: fontFamily,
+      shadow_overlay: shadowOverlay,
       likes: existing?.likes || 0,
       date: existing?.date || new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
@@ -635,6 +651,7 @@ export default function App() {
     setIsPublic(entry.is_public);
     setCardImage(entry.image_url || "");
     setFontFamily(getCardFont(entry.font_family).id);
+    setShadowOverlay(getCardShadow(entry.shadow_overlay).id);
     const matchingTheme = themes.findIndex((option) => option.background === entry.theme_background && option.ink === entry.theme_ink && option.accent === entry.theme_accent);
     if (matchingTheme >= 0) setActiveTheme(matchingTheme);
     setShareStatus("");
@@ -801,7 +818,7 @@ export default function App() {
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
             <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
-              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<blockquote style={{ fontFamily: getCardFont(poem.font_family).family, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
+              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<CardShadow value={poem.shadow_overlay} /><blockquote style={{ fontFamily: getCardFont(poem.font_family).family, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
               <div className="entry-content">
               <div className="poem-meta">
                 <span>{poem.category}</span>
@@ -846,12 +863,14 @@ export default function App() {
           <label>Visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
           <label className="edit-modal-wide">Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
         </div>
-        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><strong>{title || "Untitled"}</strong><p>{body || "Your words will appear here."}</p></div></div>
+        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p>{body || "Your words will appear here."}</p></div></div>
+        <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
         <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
         {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
       </ArchiveDialog>
       <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
+          <CardShadow value={reading?.shadow_overlay} />
           {reading?.image_url && <img src={reading.image_url} alt="" />}
           <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.excerpt}</p>
         </div>
@@ -861,7 +880,7 @@ export default function App() {
             <button disabled={readerSharing} onClick={() => shareArchiveEntry("post")}><InstagramIcon /><span>Share as post<small>Square · 1080 × 1080</small></span><ArrowIcon /></button>
             <button disabled={readerSharing} onClick={() => shareArchiveEntry("story")}><InstagramIcon /><span>Share as story<small>Portrait · 1080 × 1920</small></span><ArrowIcon /></button>
           </div>
-          <p className="reader-share-hint">Downloads your image with this piece’s saved font and palette, then opens Instagram. Select the image there to finish posting.</p>
+          <p className="reader-share-hint">Downloads your image with this piece’s saved card style, then opens Instagram. Select the image there to finish posting.</p>
           {readerShareStatus && <div className="reader-share-feedback"><p role="status">{readerShareStatus}</p><a className="instagram-open-link" href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">Open Instagram ↗</a></div>}
         </div>
       </ArchiveDialog>
@@ -913,6 +932,7 @@ export default function App() {
           <div className="studio-panel-heading"><span className="studio-step">02</span><h3>Set the mood</h3><span className="preview-size">1080 × 1080</span></div>
           <div className="card-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent }}>
             {cardImage && <img className="card-preview-image" src={cardImage} alt="" />}
+            <CardShadow value={shadowOverlay} />
             <div className="preview-inner" style={{ borderColor: theme.accent }}>
               <span style={{ color: theme.accent }}>A {category.toUpperCase()} BY</span>
               <h3 style={{ fontFamily: font.family, fontWeight: 600 }}>{title || "Untitled"}</h3>
@@ -926,6 +946,7 @@ export default function App() {
             <label className="image-upload-button">Upload a transparent image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
             <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
           </fieldset>
+          <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
           <div className="studio-share-area">
             <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
             <p>Sharing saves to your archive and downloads an image.</p>
