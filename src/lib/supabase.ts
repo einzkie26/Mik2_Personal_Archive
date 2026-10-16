@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { getCardFont } from "./cardFonts";
 
 export const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 
@@ -38,23 +39,30 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   }
   if (path !== "/entries") throw new Error("Unknown archive request.");
   if (body !== undefined) {
-    const input = body as { number: string; title: string; excerpt: string; category: string; date: string; tone: string; author: string; collection: string; is_public: boolean; image_url?: string; theme_background: string; theme_ink: string; theme_accent: string };
+    const input = body as { number: string; title: string; excerpt: string; category: string; date: string; tone: string; author: string; collection: string; is_public: boolean; image_url?: string; theme_background: string; theme_ink: string; theme_accent: string; font_family?: string };
     await archiveRequest("/owner", token);
     const collectionName = input.collection?.trim() || "Personal collection";
     const { data: collection, error: collectionError } = await database.from("archive_collections").upsert({ name: collectionName }, { onConflict: "name" }).select("id").single();
     if (collectionError) throw new Error("The collection could not be saved. Check your owner permissions and database setup.");
-    const { data: entry, error } = await database.from("archive_entries").upsert({
+    const entryData = {
       number: input.number, title: input.title, excerpt: input.excerpt, category: input.category,
       date: input.date, tone: input.tone, author: input.author,
       collection_id: collection.id, is_public: input.is_public, image_url: input.image_url || null,
       theme_background: input.theme_background, theme_ink: input.theme_ink, theme_accent: input.theme_accent,
+      font_family: getCardFont(input.font_family).id,
       updated_at: new Date().toISOString(),
-    }).select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,created_at,updated_at").single();
+    };
+    let { data: entry, error } = await database.from("archive_entries").upsert(entryData).select("*").single();
+    if (error && (error.code === "PGRST204" || error.code === "42703") && /\bfont_family\b/i.test(error.message)) {
+      if (entryData.font_family !== "fraunces") throw new Error("Font choices need a database update before this piece can be saved. Apply the card fonts migration in Supabase.");
+      const { font_family: _font, ...legacyEntryData } = entryData;
+      ({ data: entry, error } = await database.from("archive_entries").upsert(legacyEntryData).select("*").single());
+    }
     if (error) throw new Error("The entry could not be saved. Check your owner permissions and database setup.");
-    return { entry: { ...entry, collection: collectionName } };
+    return { entry: { ...entry, font_family: getCardFont(entry.font_family).id, collection: collectionName } };
   }
   const [entriesResult, piecesResult, collectionsResult] = await Promise.all([
-    database.from("archive_entries").select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,created_at,updated_at,collection:archive_collections(name)").order("created_at", { ascending: false }).order("updated_at", { ascending: false }).order("number", { ascending: true }),
+    database.from("archive_entries").select("*,collection:archive_collections(name)").order("created_at", { ascending: false }).order("updated_at", { ascending: false }).order("number", { ascending: true }),
     database.from("archive_entries").select("number", { count: "exact", head: true }),
     database.from("archive_collections").select("name", { count: "exact" }).order("name"),
   ]);
@@ -67,7 +75,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   return {
     entries: entriesResult.data.map((entry) => {
       const collection = entry.collection as unknown as { name: string } | null;
-      return { ...entry, collection: collection?.name || "Personal collection", likes: likeCounts[entry.number] || 0 };
+      return { ...entry, font_family: getCardFont(entry.font_family).id, collection: collection?.name || "Personal collection", likes: likeCounts[entry.number] || 0 };
     }),
     pieces: piecesResult.count,
     collections: collectionsResult.count,
@@ -89,4 +97,13 @@ export async function deleteArchiveEntry(number: string, token: string) {
   await archiveRequest("/owner", token);
   const { error } = await supabase.from("archive_entries").delete().eq("number", number);
   if (error) throw new Error("The entry could not be deleted. Check your owner permissions and database setup.");
+}
+
+export async function deleteEmptyArchiveCollection(name: string, token: string) {
+  await archiveRequest("/owner", token);
+  // The collection foreign key rejects deletion if any piece still uses it,
+  // including a piece added after the editor last refreshed.
+  const { error } = await supabase.from("archive_collections").delete().eq("name", name);
+  if (error?.code === "23503") throw new Error("This collection still contains pieces. Move or delete them before deleting the collection.");
+  if (error) throw new Error("The collection could not be deleted. Please try again.");
 }

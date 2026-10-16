@@ -4,8 +4,10 @@ import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
 import CollectionPicker from "./components/CollectionPicker";
+import FontPicker from "./components/FontPicker";
 import { usesStableRendering } from "./lib/browser";
-import { archiveRequest, authLog, deleteArchiveEntry, supabase, toggleArchiveLike } from "./lib/supabase";
+import { getCardFont, type CardFontId } from "./lib/cardFonts";
+import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type Theme = {
   name: string;
@@ -21,6 +23,7 @@ type CardDraft = {
   title: string;
   body: string;
   activeTheme: number;
+  fontFamily: CardFontId;
   category: EntryCategory;
   collection: string;
   isPublic: boolean;
@@ -43,6 +46,7 @@ type ArchiveEntry = {
   theme_background?: string;
   theme_ink?: string;
   theme_accent?: string;
+  font_family?: string;
 };
 
 const latestEntryCount = 6;
@@ -161,6 +165,8 @@ export default function App() {
   const [collection, setCollection] = useState("Personal collection");
   const [creatingCollection, setCreatingCollection] = useState(false);
   const [savedCollectionNames, setSavedCollectionNames] = useState<string[]>([]);
+  const [deletingCollection, setDeletingCollection] = useState<string | null>(null);
+  const [collectionStatus, setCollectionStatus] = useState("");
   const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
   const entries = archiveEntries;
   const [archiveCounts, setArchiveCounts] = useState<{ pieces: number; collections: number } | null>(null);
@@ -201,20 +207,24 @@ export default function App() {
     "Be the window left open,\nthe kettle still warm,\nthe light that says:\nI knew you would return.",
   );
   const [activeTheme, setActiveTheme] = useState(0);
+  const [fontFamily, setFontFamily] = useState<CardFontId>("fraunces");
+  const font = getCardFont(fontFamily);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;
   const volumeNumber = Number(archiveVolume);
   const volumeValid = Number.isInteger(volumeNumber) && volumeNumber >= 1 && volumeNumber <= 9999;
   const volumeLabel = volumeValid ? volumeNumber : 1;
   const collectionValid = Boolean(collection.trim());
+  const canDeleteCollection = !creatingCollection && !archiveLoading && !archiveError && savedCollectionNames.includes(collection) && !entries.some((entry) => entry.collection === collection);
   const updateCollection = (name: string, creatingNew: boolean) => {
     setCollection(name);
     setCreatingCollection(creatingNew);
+    setCollectionStatus("");
   };
   // Compare draft references without copying a potentially large image data URL.
   const cardDraft = useMemo(
-    () => ({ author, title, body, activeTheme, category, collection, isPublic, cardImage }),
-    [author, title, body, activeTheme, category, collection, isPublic, cardImage],
+    () => ({ author, title, body, activeTheme, fontFamily, category, collection, isPublic, cardImage }),
+    [author, title, body, activeTheme, fontFamily, category, collection, isPublic, cardImage],
   );
   const collectionNames = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
@@ -412,6 +422,7 @@ export default function App() {
       setTitle(parsed.title || "Ways to Stay");
       setBody(parsed.body || body);
       setActiveTheme(parsed.activeTheme ?? 0);
+      setFontFamily(getCardFont(parsed.fontFamily).id);
       if (["Poem", "Prose", "Note"].includes(parsed.category)) setCategory(parsed.category);
       if (typeof parsed.collection === "string") setCollection(parsed.collection.trim() || "Personal collection");
       setCreatingCollection(false);
@@ -423,6 +434,11 @@ export default function App() {
   }, [isOwner]);
 
   const createCard = async (entry?: ArchiveEntry, format: "post" | "story" = "post", signal?: AbortSignal) => {
+    const cardFont = getCardFont(entry ? entry.font_family : fontFamily);
+    await Promise.allSettled([
+      document.fonts.load(`400 43px ${cardFont.family}`),
+      document.fonts.load(`600 74px ${cardFont.family}`),
+    ]);
     await document.fonts.ready;
     if (signal?.aborted) return null;
     const canvas = document.createElement("canvas");
@@ -438,7 +454,7 @@ export default function App() {
     };
     context.fillStyle = cardTheme.background;
     context.fillRect(0, 0, canvas.width, canvas.height);
-    const imageSource = entry?.image_url || cardImage;
+    const imageSource = entry ? entry.image_url : cardImage;
     if (imageSource) {
       const image = await loadImage(imageSource);
       if (signal?.aborted) return null;
@@ -460,7 +476,7 @@ export default function App() {
     context.fillText(`A ${(entry?.category || category).toUpperCase()} BY`, 104, 126);
 
     context.fillStyle = cardTheme.ink;
-    context.font = "600 74px Fraunces, Georgia, serif";
+    context.font = `600 74px ${cardFont.family}`;
     context.letterSpacing = "0px";
     const titleLines = wrapText(context, entry?.title || title || "Untitled", 870);
     titleLines.slice(0, 2).forEach((line, index) => {
@@ -471,11 +487,11 @@ export default function App() {
     context.fillStyle = cardTheme.ink;
     const cardBody = entry ? entry.excerpt : body;
     let fontSize = 43;
-    context.font = `400 ${fontSize}px Fraunces, Georgia, serif`;
+    context.font = `400 ${fontSize}px ${cardFont.family}`;
     let poemLines = wrapText(context, cardBody, 850);
     while (fontSize > 16 && poemTop + (poemLines.length - 1) * fontSize * 1.48 > 870) {
       fontSize -= 1;
-      context.font = `400 ${fontSize}px Fraunces, Georgia, serif`;
+      context.font = `400 ${fontSize}px ${cardFont.family}`;
       poemLines = wrapText(context, cardBody, 850);
     }
     poemLines.forEach((line, index) => {
@@ -540,7 +556,7 @@ export default function App() {
   }, [cardDraft, isOwner]);
 
   const sharePoem = async (shouldShare = true) => {
-    if (!isOwner || !session || sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft) return;
+    if (!isOwner || !session || sharing || deletingCollection || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft) return;
     const file = preparedCard.file;
     const existing = editingNumber
       ? archiveEntries.find((entry) => entry.number === editingNumber)
@@ -557,6 +573,7 @@ export default function App() {
       theme_background: theme.background,
       theme_ink: theme.ink,
       theme_accent: theme.accent,
+      font_family: fontFamily,
       likes: existing?.likes || 0,
       date: existing?.date || new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
@@ -572,7 +589,7 @@ export default function App() {
       setSavedCollectionNames((current) => Array.from(new Set([...current, result.entry.collection])));
       setCollection(result.entry.collection);
       setCreatingCollection(false);
-        setEditingNumber(null);
+      setEditingNumber(null);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
       instagramWindow?.close();
@@ -617,10 +634,34 @@ export default function App() {
     setCreatingCollection(false);
     setIsPublic(entry.is_public);
     setCardImage(entry.image_url || "");
+    setFontFamily(getCardFont(entry.font_family).id);
     const matchingTheme = themes.findIndex((option) => option.background === entry.theme_background && option.ink === entry.theme_ink && option.accent === entry.theme_accent);
     if (matchingTheme >= 0) setActiveTheme(matchingTheme);
     setShareStatus("");
+    setCollectionStatus("");
     setEditOpen(true);
+  };
+
+  const removeEmptyCollection = async () => {
+    if (!session || !isOwner || !canDeleteCollection || deletingCollection || sharing) return;
+    const name = collection;
+    setDeletingCollection(name);
+    setCollectionStatus("");
+    try {
+      await deleteEmptyArchiveCollection(name, session.access_token);
+      const remaining = savedCollectionNames.filter((savedName) => savedName !== name);
+      setSavedCollectionNames(remaining);
+      setCollection(remaining[0] || "");
+      setCreatingCollection(remaining.length === 0);
+      if (collectionFilter === name) setCollectionFilter("");
+      setArchiveCounts((current) => current ? { ...current, collections: Math.max(0, current.collections - 1) } : current);
+      setCollectionStatus(`Deleted “${name}”.`);
+      window.dispatchEvent(new Event("archive-published"));
+    } catch (error) {
+      setCollectionStatus(error instanceof Error ? error.message : "The collection could not be deleted.");
+    } finally {
+      setDeletingCollection(null);
+    }
   };
 
   const savePoetProfile = async () => {
@@ -760,15 +801,15 @@ export default function App() {
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
             <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
-              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<blockquote>{poem.excerpt}</blockquote></div>
+              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<blockquote style={{ fontFamily: getCardFont(poem.font_family).family, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
               <div className="entry-content">
               <div className="poem-meta">
                 <span>{poem.category}</span>
                 <span>{poem.date}</span>
               </div>
-              <h3>{poem.title}</h3>
+              <h3 style={{ fontFamily: getCardFont(poem.font_family).family }}>{poem.title}</h3>
               {poem.collection && <span className="entry-collection">From {poem.collection}</span>}
-              <p>{poem.excerpt}</p>
+              <p style={{ fontFamily: getCardFont(poem.font_family).family }}>{poem.excerpt}</p>
               <div className="entry-actions">
                 <button className={`favorite-button ${likedNumbers.includes(poem.number) ? "is-liked" : ""}`} aria-label={`${likedNumbers.includes(poem.number) ? "Unlike" : "Like"} ${poem.title}`} aria-pressed={likedNumbers.includes(poem.number)} onClick={() => void toggleLike(poem)}><svg viewBox="0 0 24 24" fill={likedNumbers.includes(poem.number) ? "currentColor" : "none"}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{poem.likes}</span></button>
                 <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); }}>Read piece <ArrowIcon /></button>
@@ -797,20 +838,22 @@ export default function App() {
         <h2>Edit this piece.</h2>
         <div className="edit-modal-fields">
           <label>Type<select value={category} onChange={(event) => setCategory(event.target.value as EntryCategory)}><option>Poem</option><option>Prose</option><option>Note</option></select></label>
-          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={editOpen} />
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={editOpen} onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
           <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
           <label>Author<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
-          <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} /></label>
+          <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} style={{ fontFamily: font.family }} /></label>
+          <FontPicker value={fontFamily} onChange={setFontFamily} />
           <label>Visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
-          <label>Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
+          <label className="edit-modal-wide">Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
         </div>
-        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-pressed={activeTheme === index}>{option.name}</button>)}</div></div>
-        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
+        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><strong>{title || "Untitled"}</strong><p>{body || "Your words will appear here."}</p></div></div>
+        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
+        {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
       </ArchiveDialog>
       <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
           {reading?.image_url && <img src={reading.image_url} alt="" />}
-          <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2>{reading?.title}</h2><p className="reader-body">{reading?.excerpt}</p>
+          <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.excerpt}</p>
         </div>
         <div className="reader-share-section">
           <p className="eyebrow">Share on Instagram</p>
@@ -818,7 +861,7 @@ export default function App() {
             <button disabled={readerSharing} onClick={() => shareArchiveEntry("post")}><InstagramIcon /><span>Share as post<small>Square · 1080 × 1080</small></span><ArrowIcon /></button>
             <button disabled={readerSharing} onClick={() => shareArchiveEntry("story")}><InstagramIcon /><span>Share as story<small>Portrait · 1080 × 1920</small></span><ArrowIcon /></button>
           </div>
-          <p className="reader-share-hint">Downloads your image using the studio’s selected palette and opens Instagram. Select the image there to finish posting.</p>
+          <p className="reader-share-hint">Downloads your image with this piece’s saved font and palette, then opens Instagram. Select the image there to finish posting.</p>
           {readerShareStatus && <div className="reader-share-feedback"><p role="status">{readerShareStatus}</p><a className="instagram-open-link" href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">Open Instagram ↗</a></div>}
         </div>
       </ArchiveDialog>
@@ -846,13 +889,14 @@ export default function App() {
             <legend>What are you writing?</legend>
             <div className="entry-type-options">{(["Poem", "Prose", "Note"] as const).map((option) => <button key={option} aria-pressed={category === option} className={category === option ? "selected" : ""} onClick={() => setCategory(option)}>{option}</button>)}</div>
           </fieldset>
-          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={!editOpen} />
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={!editOpen} onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
           <label>Archive visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public — visible in the archive</option><option value="hidden">Hidden — owner only</option></select></label>
           <div className="studio-fields">
             <label>Your name<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
             <label>{category} title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
           </div>
-          <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} /><span>{body.length} / 360 characters</span></label>
+          <FontPicker value={fontFamily} onChange={setFontFamily} />
+          <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} style={{ fontFamily: font.family }} /><span>{body.length} / 360 characters</span></label>
           <div className="profile-settings">
             <div className="studio-panel-heading"><span className="studio-step">03</span><h3>Archive settings</h3></div>
             <label>Hero volume<input type="number" min="1" max="9999" step="1" inputMode="numeric" value={archiveVolume} onChange={(event) => setArchiveVolume(event.target.value)} aria-invalid={!volumeValid} aria-describedby="archive-volume-help" /></label>
@@ -867,21 +911,23 @@ export default function App() {
         </div>
         <div className="studio-preview-panel">
           <div className="studio-panel-heading"><span className="studio-step">02</span><h3>Set the mood</h3><span className="preview-size">1080 × 1080</span></div>
-          <div className="card-preview" style={{ backgroundColor: theme.background, backgroundImage: cardImage ? `linear-gradient(#0002, #0002), url(${cardImage})` : undefined, backgroundSize: "cover", backgroundPosition: "center", color: theme.ink, borderColor: theme.accent }}>
+          <div className="card-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent }}>
+            {cardImage && <img className="card-preview-image" src={cardImage} alt="" />}
             <div className="preview-inner" style={{ borderColor: theme.accent }}>
               <span style={{ color: theme.accent }}>A {category.toUpperCase()} BY</span>
-              <h3>{title || "Untitled"}</h3>
-              <p>{body || "Your words will appear here."}</p>
+              <h3 style={{ fontFamily: font.family, fontWeight: 600 }}>{title || "Untitled"}</h3>
+              <p style={{ fontFamily: font.family }}>{body || "Your words will appear here."}</p>
               <footer><i style={{ background: theme.accent }} />{author || "Anonymous"}</footer>
             </div>
           </div>
           <fieldset className="studio-palette">
             <legend>Card palette</legend>
+            <p className="palette-help">Choose a background and matching text colors.</p>
             <label className="image-upload-button">Upload a transparent image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
-            <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
+            <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
           </fieldset>
           <div className="studio-share-area">
-            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
+            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
             <p>Sharing saves to your archive and downloads an image.</p>
             <small>Opens Instagram in a new tab. Create a post and select the downloaded image.</small>
             {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
