@@ -473,7 +473,7 @@ export default function App() {
     if (imageSource) {
       const image = await loadImage(imageSource);
       if (signal?.aborted) return null;
-      const scale = Math.min(900 / image.naturalWidth, 850 / image.naturalHeight);
+      const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
       const width = image.naturalWidth * scale;
       const height = image.naturalHeight * scale;
       context.globalAlpha = .28;
