@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { defaultCardFont, getCardFont } from "./cardFonts";
 import { getCardShadow } from "./cardShadows";
+import { defaultPoemTextSize, getPoemTextSize } from "./poemTextSize";
 
 export const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 
@@ -40,8 +41,9 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   }
   if (path !== "/entries") throw new Error("Unknown archive request.");
   if (body !== undefined) {
-    const input = body as { number: string; title: string; excerpt: string; category: string; date: string; tone: string; author: string; collection: string; is_public: boolean; image_url?: string; theme_background: string; theme_ink: string; theme_accent: string; font_family?: string; shadow_overlay?: string };
+    const input = body as { number: string; title: string; excerpt: string; category: string; date: string; tone: string; author: string; collection: string; is_public: boolean; image_url?: string; theme_background: string; theme_ink: string; theme_accent: string; font_family?: string; shadow_overlay?: string; poem_text_size?: number };
     await archiveRequest("/owner", token);
+    if (input.poem_text_size !== undefined && input.poem_text_size !== getPoemTextSize(input.poem_text_size)) throw new Error("Poem text size must be a whole number from 70% to 150%.");
     const collectionName = input.collection?.trim() || "Personal collection";
     const { data: collection, error: collectionError } = await database.from("archive_collections").upsert({ name: collectionName }, { onConflict: "name" }).select("id").single();
     if (collectionError) throw new Error("The collection could not be saved. Check your owner permissions and database setup.");
@@ -52,12 +54,16 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
       theme_background: input.theme_background, theme_ink: input.theme_ink, theme_accent: input.theme_accent,
       font_family: getCardFont(input.font_family).id,
       shadow_overlay: getCardShadow(input.shadow_overlay).id,
+      poem_text_size: getPoemTextSize(input.poem_text_size),
       updated_at: new Date().toISOString(),
     };
     let { data: entry, error } = await database.from("archive_entries").upsert(entryData).select("*").single();
-    for (let retry = 0; error && retry < 2; retry += 1) {
+    for (let retry = 0; error && retry < 3; retry += 1) {
       if (error.code !== "PGRST204" && error.code !== "42703") break;
-      if (/\bshadow_overlay\b/i.test(error.message) && "shadow_overlay" in entryData) {
+      if (/\bpoem_text_size\b/i.test(error.message) && "poem_text_size" in entryData) {
+        if (entryData.poem_text_size !== defaultPoemTextSize) throw new Error("Saving poem text sizes needs a database update. Apply the poem text size migration in Supabase.");
+        delete entryData.poem_text_size;
+      } else if (/\bshadow_overlay\b/i.test(error.message) && "shadow_overlay" in entryData) {
         if (entryData.shadow_overlay !== "none") throw new Error("Saving shadow overlays needs a database update. Apply the card shadow overlays migration in Supabase.");
         delete entryData.shadow_overlay;
       } else if (/\bfont_family\b/i.test(error.message) && "font_family" in entryData) {
@@ -67,7 +73,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
       ({ data: entry, error } = await database.from("archive_entries").upsert(entryData).select("*").single());
     }
     if (error) throw new Error("The entry could not be saved. Check your owner permissions and database setup.");
-    return { entry: { ...entry, font_family: getCardFont(entry.font_family).id, shadow_overlay: getCardShadow(entry.shadow_overlay).id, collection: collectionName } };
+    return { entry: { ...entry, font_family: getCardFont(entry.font_family).id, shadow_overlay: getCardShadow(entry.shadow_overlay).id, poem_text_size: getPoemTextSize(entry.poem_text_size), collection: collectionName } };
   }
   const [entriesResult, piecesResult, collectionsResult] = await Promise.all([
     database.from("archive_entries").select("*,collection:archive_collections(name)").order("created_at", { ascending: false }).order("updated_at", { ascending: false }).order("number", { ascending: true }),
@@ -83,7 +89,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   return {
     entries: entriesResult.data.map((entry) => {
       const collection = entry.collection as unknown as { name: string } | null;
-      return { ...entry, font_family: getCardFont(entry.font_family).id, shadow_overlay: getCardShadow(entry.shadow_overlay).id, collection: collection?.name || "Personal collection", likes: likeCounts[entry.number] || 0 };
+      return { ...entry, font_family: getCardFont(entry.font_family).id, shadow_overlay: getCardShadow(entry.shadow_overlay).id, poem_text_size: getPoemTextSize(entry.poem_text_size), collection: collection?.name || "Personal collection", likes: likeCounts[entry.number] || 0 };
     }),
     pieces: piecesResult.count,
     collections: collectionsResult.count,

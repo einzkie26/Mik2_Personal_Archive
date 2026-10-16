@@ -7,9 +7,11 @@ import CollectionPicker from "./components/CollectionPicker";
 import FontPicker from "./components/FontPicker";
 import CardShadow from "./components/CardShadow";
 import ShadowPicker from "./components/ShadowPicker";
+import PoemSizeControl from "./components/PoemSizeControl";
 import { usesStableRendering } from "./lib/browser";
 import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
 import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/cardShadows";
+import { defaultPoemTextSize, getPoemTextSize } from "./lib/poemTextSize";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type Theme = {
@@ -28,6 +30,7 @@ type CardDraft = {
   activeTheme: number;
   fontFamily: CardFontId;
   shadowOverlay: CardShadowId;
+  poemTextSize: number;
   category: EntryCategory;
   collection: string;
   isPublic: boolean;
@@ -52,6 +55,7 @@ type ArchiveEntry = {
   theme_accent?: string;
   font_family?: string;
   shadow_overlay?: string;
+  poem_text_size?: number;
 };
 
 const latestEntryCount = 6;
@@ -214,6 +218,8 @@ export default function App() {
   const [activeTheme, setActiveTheme] = useState(0);
   const [fontFamily, setFontFamily] = useState<CardFontId>(defaultCardFont.id);
   const [shadowOverlay, setShadowOverlay] = useState<CardShadowId>("none");
+  const [poemTextSize, setPoemTextSize] = useState(defaultPoemTextSize);
+  const poemScale = poemTextSize / 100;
   const font = getCardFont(fontFamily);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;
@@ -229,8 +235,8 @@ export default function App() {
   };
   // Compare draft references without copying a potentially large image data URL.
   const cardDraft = useMemo(
-    () => ({ author, title, body, activeTheme, fontFamily, shadowOverlay, category, collection, isPublic, cardImage }),
-    [author, title, body, activeTheme, fontFamily, shadowOverlay, category, collection, isPublic, cardImage],
+    () => ({ author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage }),
+    [author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage],
   );
   const collectionNames = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
@@ -430,6 +436,7 @@ export default function App() {
       setActiveTheme(parsed.activeTheme ?? 0);
       setFontFamily(getCardFont(parsed.fontFamily).id);
       setShadowOverlay(getCardShadow(parsed.shadowOverlay).id);
+      setPoemTextSize(getPoemTextSize(parsed.poemTextSize));
       if (["Poem", "Prose", "Note"].includes(parsed.category)) setCategory(parsed.category);
       if (typeof parsed.collection === "string") setCollection(parsed.collection.trim() || "Personal collection");
       setCreatingCollection(false);
@@ -501,7 +508,7 @@ export default function App() {
     const poemTop = 244 + titleLines.slice(0, 2).length * 82 + 54;
     context.fillStyle = cardTheme.ink;
     const cardBody = entry ? entry.excerpt : body;
-    let fontSize = 43;
+    let fontSize = Math.round(43 * getPoemTextSize(entry ? entry.poem_text_size : poemTextSize) / 100);
     context.font = `400 ${fontSize}px ${cardFont.family}`;
     let poemLines = wrapText(context, cardBody, 850);
     while (fontSize > 16 && poemTop + (poemLines.length - 1) * fontSize * 1.48 > 870) {
@@ -590,6 +597,7 @@ export default function App() {
       theme_accent: theme.accent,
       font_family: fontFamily,
       shadow_overlay: shadowOverlay,
+      poem_text_size: poemTextSize,
       likes: existing?.likes || 0,
       date: existing?.date || new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
@@ -652,6 +660,7 @@ export default function App() {
     setCardImage(entry.image_url || "");
     setFontFamily(getCardFont(entry.font_family).id);
     setShadowOverlay(getCardShadow(entry.shadow_overlay).id);
+    setPoemTextSize(getPoemTextSize(entry.poem_text_size));
     const matchingTheme = themes.findIndex((option) => option.background === entry.theme_background && option.ink === entry.theme_ink && option.accent === entry.theme_accent);
     if (matchingTheme >= 0) setActiveTheme(matchingTheme);
     setShareStatus("");
@@ -818,7 +827,7 @@ export default function App() {
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
             <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
-              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<CardShadow value={poem.shadow_overlay} /><blockquote style={{ fontFamily: getCardFont(poem.font_family).family, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
+              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<CardShadow value={poem.shadow_overlay} /><blockquote style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${25 * getPoemTextSize(poem.poem_text_size) / 100}px`, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
               <div className="entry-content">
               <div className="poem-meta">
                 <span>{poem.category}</span>
@@ -826,7 +835,7 @@ export default function App() {
               </div>
               <h3 style={{ fontFamily: getCardFont(poem.font_family).family }}>{poem.title}</h3>
               {poem.collection && <span className="entry-collection">From {poem.collection}</span>}
-              <p style={{ fontFamily: getCardFont(poem.font_family).family }}>{poem.excerpt}</p>
+              <p style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${17 * getPoemTextSize(poem.poem_text_size) / 100}px` }}>{poem.excerpt}</p>
               <div className="entry-actions">
                 <button className={`favorite-button ${likedNumbers.includes(poem.number) ? "is-liked" : ""}`} aria-label={`${likedNumbers.includes(poem.number) ? "Unlike" : "Like"} ${poem.title}`} aria-pressed={likedNumbers.includes(poem.number)} onClick={() => void toggleLike(poem)}><svg viewBox="0 0 24 24" fill={likedNumbers.includes(poem.number) ? "currentColor" : "none"}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{poem.likes}</span></button>
                 <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); }}>Read piece <ArrowIcon /></button>
@@ -858,12 +867,13 @@ export default function App() {
           <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={editOpen} onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
           <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
           <label>Author<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
-          <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} style={{ fontFamily: font.family }} /></label>
+          <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /></label>
           <FontPicker value={fontFamily} onChange={setFontFamily} />
           <label>Visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
+          <div className="edit-modal-wide"><PoemSizeControl value={poemTextSize} onChange={setPoemTextSize} /></div>
           <label className="edit-modal-wide">Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
         </div>
-        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p>{body || "Your words will appear here."}</p></div></div>
+        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{body || "Your words will appear here."}</p></div></div>
         <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
         <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
         {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
@@ -872,7 +882,7 @@ export default function App() {
         <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
           <CardShadow value={reading?.shadow_overlay} />
           {reading?.image_url && <img src={reading.image_url} alt="" />}
-          <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.excerpt}</p>
+          <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family, fontSize: `${25 * getPoemTextSize(reading?.poem_text_size) / 100}px` }}>{reading?.excerpt}</p>
         </div>
         <div className="reader-share-section">
           <p className="eyebrow">Share on Instagram</p>
@@ -915,18 +925,8 @@ export default function App() {
             <label>{category} title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
           </div>
           <FontPicker value={fontFamily} onChange={setFontFamily} />
-          <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} style={{ fontFamily: font.family }} /><span>{body.length} / 360 characters</span></label>
-          <div className="profile-settings">
-            <div className="studio-panel-heading"><span className="studio-step">03</span><h3>Archive settings</h3></div>
-            <label>Hero volume<input type="number" min="1" max="9999" step="1" inputMode="numeric" value={archiveVolume} onChange={(event) => setArchiveVolume(event.target.value)} aria-invalid={!volumeValid} aria-describedby="archive-volume-help" /></label>
-            <small id="archive-volume-help">Shown as “Personal archive · VOL {volumeLabel}” in Quiet hours.</small>
-            <label>Poet name<input value={poetName} onChange={(event) => setPoetName(event.target.value)} maxLength={40} /></label>
-            <label>Poet quote<textarea value={poetQuote} onChange={(event) => setPoetQuote(event.target.value)} maxLength={180} rows={3} /></label>
-            <label>Poet text<textarea value={poetBio} onChange={(event) => setPoetBio(event.target.value)} maxLength={360} rows={4} /></label>
-            <div className="profile-controls"><label>Text size<input type="range" min="70" max="150" value={poetTextSize} onChange={(event) => setPoetTextSize(Number(event.target.value))} /><span>{poetTextSize}%</span></label><label>Text color<input type="color" value={poetTextColor} onChange={(event) => setPoetTextColor(event.target.value)} /></label></div>
-            <button className="profile-save-button" onClick={() => void savePoetProfile()} disabled={profileSaving || !volumeValid}>{profileSaving ? "Saving…" : "Save archive settings"}</button>
-            {profileStatus && <p className="studio-share-feedback" role="status">{profileStatus}</p>}
-          </div>
+          <PoemSizeControl value={poemTextSize} onChange={setPoemTextSize} />
+          <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /><span>{body.length} / 360 characters</span></label>
         </div>
         <div className="studio-preview-panel">
           <div className="studio-panel-heading"><span className="studio-step">02</span><h3>Set the mood</h3><span className="preview-size">1080 × 1080</span></div>
@@ -936,7 +936,7 @@ export default function App() {
             <div className="preview-inner" style={{ borderColor: theme.accent }}>
               <span style={{ color: theme.accent }}>A {category.toUpperCase()} BY</span>
               <h3 style={{ fontFamily: font.family, fontWeight: 600 }}>{title || "Untitled"}</h3>
-              <p style={{ fontFamily: font.family }}>{body || "Your words will appear here."}</p>
+              <p style={{ fontFamily: font.family, fontSize: `clamp(${12 * poemScale}px, ${4.4 * poemScale}cqw, ${21 * poemScale}px)` }}>{body || "Your words will appear here."}</p>
               <footer><i style={{ background: theme.accent }} />{author || "Anonymous"}</footer>
             </div>
           </div>
@@ -954,6 +954,19 @@ export default function App() {
             {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
           </div>
         </div>
+        <section className="archive-settings-card" aria-labelledby="archive-settings-heading">
+          <div className="studio-panel-heading"><span className="studio-step">03</span><h3 id="archive-settings-heading">Archive settings</h3></div>
+          <p className="archive-settings-intro">Manage your archive details and poet profile.</p>
+          <div className="archive-settings-fields">
+            <div className="archive-setting-field"><label>Archive volume<input type="number" min="1" max="9999" step="1" inputMode="numeric" value={archiveVolume} onChange={(event) => setArchiveVolume(event.target.value)} aria-invalid={!volumeValid} aria-describedby="archive-volume-help" /></label><small id="archive-volume-help">Shown as “Personal archive · VOL {volumeLabel}” in Quiet hours.</small></div>
+            <label>Poet name<input value={poetName} onChange={(event) => setPoetName(event.target.value)} maxLength={40} /></label>
+            <label>Poet quote<textarea value={poetQuote} onChange={(event) => setPoetQuote(event.target.value)} maxLength={180} rows={4} /></label>
+            <label>Poet biography<textarea value={poetBio} onChange={(event) => setPoetBio(event.target.value)} maxLength={360} rows={4} /></label>
+            <div className="profile-controls"><label>Poet quote size<input type="range" min="70" max="150" value={poetTextSize} onChange={(event) => setPoetTextSize(Number(event.target.value))} aria-valuetext={`${poetTextSize} percent`} /><span aria-hidden="true">{poetTextSize}%</span></label><label>Quote color<input type="color" value={poetTextColor} onChange={(event) => setPoetTextColor(event.target.value)} /></label></div>
+          </div>
+          <button className="profile-save-button" onClick={() => void savePoetProfile()} disabled={profileSaving || !volumeValid}>{profileSaving ? "Saving…" : "Save archive settings"}</button>
+          {profileStatus && <p className="studio-share-feedback" role="status">{profileStatus}</p>}
+        </section>
       </section>}
 
       <ArchiveDialog open={deleteCandidate !== null} onClose={() => setDeleteCandidate(null)} closeLabel="Close delete confirmation" ariaLabel="Delete this piece?" className="delete-modal">
