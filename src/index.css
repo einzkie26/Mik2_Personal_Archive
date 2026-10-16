@@ -376,7 +376,7 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .favorite-button[aria-pressed="true"] { color: var(--archive-accent) !important; }
 .favorite-button[aria-pressed="true"] svg { fill: currentColor; }
 .archive-search { width: 100%; padding: 16px 20px; margin-bottom: 30px; background: var(--archive-paper); border: 1px solid var(--archive-rule); border-radius: 12px; }
-.poem-reader { position: fixed; inset: 0; z-index: 40; margin: auto; max-width: 650px; width: calc(100% - 40px); max-height: 85vh; max-height: 85dvh; overflow: auto; overscroll-behavior-y: contain; border: 1px solid var(--archive-rule); border-radius: 20px; padding: 60px 45px; background: var(--archive-paper); color: var(--archive-ink); }
+.poem-reader { position: fixed; inset: 0; z-index: 40; margin: auto; max-width: 650px; width: calc(100% - 40px); height: fit-content; min-height: 0; max-height: min(85vh, calc(100vh - 32px)); max-height: min(85dvh, calc(100dvh - 32px)); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; border: 1px solid var(--archive-rule); border-radius: 20px; padding: 60px 45px; background: var(--archive-paper); color: var(--archive-ink); }
 .poem-reader::backdrop { background: #28261f88; backdrop-filter: blur(4px); }
 .poem-reader h2 { font: 400 44px/1.1 "Cormorant Garamond", serif; }
 .reader-body { font: 400 25px/1.6 "Cormorant Garamond", serif; white-space: pre-line; margin-block: 30px; }
@@ -417,6 +417,24 @@ button:hover, a:hover { opacity: .8; }
   .quote-panel { min-height: 220px; }
   .quote-panel blockquote { font-size: 24px; }
   .poem-reader { padding: 55px 26px 35px; }
+}
+.poem-reader.archive-dialog {
+  inset: var(--dialog-viewport-top, 0px) 0 var(--dialog-viewport-bottom, 0px);
+  max-height: min(85vh, calc(var(--dialog-viewport-height, 100vh) - 32px));
+  max-height: min(85dvh, calc(var(--dialog-viewport-height, 100dvh) - 32px));
+  padding: 0;
+  overflow: hidden;
+}
+.archive-dialog[open] { display: flex; flex-direction: column; }
+.archive-dialog-header { display: flex; justify-content: flex-end; flex-shrink: 0; padding: 10px 14px 0; }
+.archive-dialog-header .reader-close { position: static; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border-radius: 50%; line-height: 1; }
+.archive-dialog-content { min-height: 0; min-width: 0; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y pinch-zoom; padding: 45px; }
+.has-close-button .archive-dialog-content { padding-top: 12px; }
+.archive-dialog-content > :first-child { margin-top: 0; }
+.archive-dialog-content > :last-child { margin-bottom: 0; }
+@media (max-width: 700px) { .archive-dialog-content { padding: 32px 26px; } }
+@supports selector(html:has(dialog:modal)) {
+  html:has(dialog:modal), body:has(dialog:modal) { overflow: hidden; overscroll-behavior: none; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } button, a { transition: none; } }
 
@@ -590,6 +608,8 @@ button:hover, a:hover { opacity: .8; }
 .profile-settings { display: flex; flex-direction: column; gap: 18px; margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--archive-rule); }
 .profile-settings .studio-panel-heading { margin-bottom: 2px; }
 .profile-settings textarea { min-height: 0; }
+.portfolio-shell .studio .profile-settings input[type="number"] { max-width: 160px; }
+#archive-volume-help { margin-top: -12px; color: var(--archive-muted); font-size: 11px; line-height: 1.6; }
 .profile-controls { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: end; }
 .profile-controls label { position: relative; }
 .profile-controls input[type="range"] { padding: 8px 0; accent-color: var(--archive-accent); }
@@ -598,6 +618,10 @@ button:hover, a:hover { opacity: .8; }
 .profile-save-button { border: 0; border-radius: 10px; padding: 14px; background: var(--archive-ink); color: var(--archive-paper); font-size: 12px; }
 .profile-save-button:disabled { opacity: .6; cursor: wait; }
 .archive-heading-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+.archive-period-description { margin: -20px 0 24px; color: var(--archive-muted); font-size: 13px; line-height: 1.6; }
+.archive-period-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; border: 1px solid var(--archive-rule); border-radius: 14px; background: var(--archive-paper); }
+.archive-period-filters button { border: 0; border-radius: 9px; padding: 10px 15px; background: transparent; color: var(--archive-muted); font-size: 12px; }
+.archive-period-filters button[aria-pressed="true"] { background: var(--archive-ink); color: var(--archive-paper); }
 .collection-open-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--archive-rule); border-radius: 10px; padding: 10px 13px; background: transparent; color: var(--archive-ink); font-size: 11px; }
 .collection-open-button svg { width: 15px; }
 .collection-open-button:hover { border-color: var(--archive-accent); color: var(--archive-accent); }
@@ -773,6 +797,8 @@ button:hover, a:hover { opacity: .8; }
   .hero-main, .hero-bottom, .section-heading, .studio-heading-top { min-width: 0; }
   .hero h1, .hero .intro, .section-heading h2, .about blockquote { overflow-wrap: anywhere; }
   .archive-heading-actions { width: 100%; align-items: stretch; }
+  .archive-period-filters { width: 100%; }
+  .archive-period-filters button { flex: 1; }
   .archive-filters { width: 100%; justify-content: space-between; }
   .archive-filters button { min-width: 0; padding-inline: 12px; }
   .site-footer { padding-inline: 7vw; }

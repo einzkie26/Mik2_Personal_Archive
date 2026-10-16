@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
+import ArchiveDialog from "./components/ArchiveDialog";
 import { usesStableRendering } from "./lib/browser";
 import { archiveRequest, authLog, deleteArchiveEntry, supabase, toggleArchiveLike } from "./lib/supabase";
 
@@ -13,6 +14,7 @@ type Theme = {
 };
 
 type EntryCategory = "Poem" | "Prose" | "Note";
+type EntryPeriod = "latest" | "previous";
 type CardDraft = {
   author: string;
   title: string;
@@ -29,6 +31,8 @@ type ArchiveEntry = {
   excerpt: string;
   category: EntryCategory;
   date: string;
+  created_at?: string;
+  updated_at?: string;
   tone: string;
   author?: string;
   collection?: string;
@@ -39,6 +43,13 @@ type ArchiveEntry = {
   theme_ink?: string;
   theme_accent?: string;
 };
+
+const latestEntryCount = 6;
+
+function entryPublicationTime(entry: ArchiveEntry) {
+  const timestamp = Date.parse(entry.created_at || entry.date);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
 
 const themes: Theme[] = [
   { name: "Clay", background: "#bf593f", ink: "#fff9ee", accent: "#f4c7a1" },
@@ -135,8 +146,8 @@ export default function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [accessStatus, setAccessStatus] = useState("");
   const studioRef = useRef<HTMLElement>(null);
-  const readerRef = useRef<HTMLDialogElement>(null);
   const [filter, setFilter] = useState("All");
+  const [entryPeriod, setEntryPeriod] = useState<EntryPeriod>("latest");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [collectionFilter, setCollectionFilter] = useState("");
@@ -166,6 +177,7 @@ export default function App() {
   const [poetBio, setPoetBio] = useState("I’m Mikhai, a poet and observer of ordinary wonders. My work lives somewhere between memory and morning light.");
   const [poetTextSize, setPoetTextSize] = useState(100);
   const [poetTextColor, setPoetTextColor] = useState("#28261f");
+  const [archiveVolume, setArchiveVolume] = useState("1");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileStatus, setProfileStatus] = useState("");
   const [cardImage, setCardImage] = useState("");
@@ -188,6 +200,9 @@ export default function App() {
   const [activeTheme, setActiveTheme] = useState(0);
   const theme = themes[activeTheme];
   const poetScale = poetTextSize / 100;
+  const volumeNumber = Number(archiveVolume);
+  const volumeValid = Number.isInteger(volumeNumber) && volumeNumber >= 1 && volumeNumber <= 9999;
+  const volumeLabel = volumeValid ? volumeNumber : 1;
   // Compare draft references without copying a potentially large image data URL.
   const cardDraft = useMemo(
     () => ({ author, title, body, activeTheme, category, collection, isPublic, cardImage }),
@@ -197,14 +212,23 @@ export default function App() {
     () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
     [entries],
   );
+  const orderedEntries = useMemo(() => [...entries].sort((first, second) =>
+    entryPublicationTime(second) - entryPublicationTime(first) ||
+    (Date.parse(second.date) || 0) - (Date.parse(first.date) || 0) ||
+    first.number.localeCompare(second.number),
+  ), [entries]);
+  const periodEntries = useMemo(() => entryPeriod === "latest"
+    ? orderedEntries.slice(0, latestEntryCount)
+    : orderedEntries.slice(latestEntryCount),
+  [orderedEntries, entryPeriod]);
   const visibleEntries = useMemo(() => {
     const searchQuery = query.toLowerCase();
-    return entries.filter((poem) =>
+    return periodEntries.filter((poem) =>
       (filter === "All" || poem.category === filter) &&
       (!collectionFilter || poem.collection === collectionFilter) &&
       `${poem.title} ${poem.excerpt}`.toLowerCase().includes(searchQuery),
     );
-  }, [entries, filter, collectionFilter, query]);
+  }, [periodEntries, filter, collectionFilter, query]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -250,6 +274,7 @@ export default function App() {
       setPoetBio(profile.bio);
       setPoetTextSize(profile.text_size);
       setPoetTextColor(profile.text_color);
+      setArchiveVolume(String(profile.volume ?? 1));
     }).catch(() => {
       if (!cancelled) setProfileStatus("The poet profile could not be loaded.");
     });
@@ -489,7 +514,6 @@ export default function App() {
   useEffect(() => {
     if (!isOwner) return;
     const controller = new AbortController();
-    // The DOM preview stays live; encode the download only after typing pauses.
     const timer = window.setTimeout(() => {
       createCard(undefined, "post", controller.signal).then((blob) => {
         if (controller.signal.aborted || !blob) return;
@@ -524,7 +548,7 @@ export default function App() {
       theme_ink: theme.ink,
       theme_accent: theme.accent,
       likes: existing?.likes || 0,
-      date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+      date: existing?.date || new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
     };
     setSharing(true);
@@ -552,6 +576,7 @@ export default function App() {
     try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
     setFilter("All");
     setQuery("");
+    setEntryPeriod("latest");
     if (instagramWindow) {
       instagramWindow.location.replace("https://www.instagram.com/");
     }
@@ -586,6 +611,10 @@ export default function App() {
 
   const savePoetProfile = async () => {
     if (!session || profileSaving) return;
+    if (!volumeValid) {
+      setProfileStatus("Volume must be a whole number from 1 to 9999.");
+      return;
+    }
     setProfileSaving(true);
     setProfileStatus("");
     try {
@@ -595,11 +624,13 @@ export default function App() {
         bio: poetBio.trim() || "I’m Mikhai, a poet and observer of ordinary wonders. My work lives somewhere between memory and morning light.",
         text_size: poetTextSize,
         text_color: poetTextColor,
+        volume: volumeNumber,
       });
       setPoetName(profile.poet_name);
       setPoetQuote(profile.quote);
       setPoetBio(profile.bio);
-      setProfileStatus("Poet profile saved.");
+      setArchiveVolume(String(profile.volume ?? volumeNumber));
+      setProfileStatus("Archive settings saved.");
     } catch (error) {
       setProfileStatus(error instanceof Error ? error.message : "The poet profile could not be saved.");
     } finally {
@@ -646,7 +677,7 @@ export default function App() {
     <main className="portfolio-shell">
       {loadingScreenVisible && <div className="archive-loading-screen" role="status" aria-live="polite">
         <div className="archive-loading-orbit" aria-hidden="true"><i /><i /><i /></div>
-        <p className="eyebrow">Personal archive · VOL 1</p>
+        <p className="eyebrow">Personal archive · VOL {volumeLabel}</p>
         <h1>Words for the<br /><em>quiet hours.</em></h1>
         <span className="archive-loading-label">Gathering the archive</span>
       </div>}
@@ -668,7 +699,7 @@ export default function App() {
       <OwnerPasswordChange open={passwordChangeOpen} onComplete={() => setPasswordChangeOpen(false)} onLogout={() => void logOut()} onSkip={() => { setPasswordChangeDeferred(true); setPasswordChangeOpen(false); setIsOwner(true); }} />
       <section className="hero" id="top">
         <div className="hero-top">
-          <p className="eyebrow">Personal archive · VOL 1</p>
+          <p className="eyebrow">Personal archive · VOL {volumeLabel}</p>
           <div className="hero-actions">
           <button className={`search-toggle owner-toggle ${isOwner ? "is-owner" : ""}`} aria-label={isOwner ? "Sign out of Card Studio" : "Owner login"} title={isOwner ? "Sign out of Card Studio" : "Owner login"} onClick={() => { if (isOwner) void logOut(); else setLoginOpen(true); }}>
             {isOwner ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M9 12h12m-4-4 4 4-4 4" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg>}
@@ -696,10 +727,17 @@ export default function App() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">The archive</p>
-            <h2>Latest entries</h2>
+            <h2>{entryPeriod === "latest" ? "Latest entries" : "Previous entries"}</h2>
           </div>
-          <div className="archive-heading-actions"><button className="collection-open-button" onClick={() => setCollectionsOpen(true)}>Browse collections <ArrowIcon /></button><div className="archive-filters" aria-label="Filter entries">{["All", "Poem", "Prose", "Note"].map((category) => <button key={category} aria-pressed={filter === category} className={filter === category ? "selected" : ""} onClick={() => setFilter(category)}>{category}</button>)}</div></div>
+          <div className="archive-heading-actions">
+            <div className="archive-period-filters" role="group" aria-label="Entry period">
+              {(["latest", "previous"] as const).map((period) => <button key={period} aria-pressed={entryPeriod === period} className={entryPeriod === period ? "selected" : ""} onClick={() => setEntryPeriod(period)}>{period === "latest" ? "Latest entries" : "Previous entries"}</button>)}
+            </div>
+            <button className="collection-open-button" onClick={() => setCollectionsOpen(true)}>Browse collections <ArrowIcon /></button>
+            <div className="archive-filters" aria-label="Filter entries">{["All", "Poem", "Prose", "Note"].map((category) => <button key={category} aria-pressed={filter === category} className={filter === category ? "selected" : ""} onClick={() => setFilter(category)}>{category}</button>)}</div>
+          </div>
         </div>
+        {!archiveLoading && entries.length > 0 && <p className="archive-period-description">{entryPeriod === "latest" ? "The six most recent pieces. Earlier pieces are in Previous entries." : "Earlier pieces, with the most recent first."}</p>}
         {archiveError && <p className="archive-share-status" role="alert">{archiveError}</p>}
         {archiveLoading && <p className="empty-archive" role="status">Gathering the latest entries…</p>}
         {!archiveLoading && !archiveError && entries.length === 0 && <p className="empty-archive">The archive is quiet for now. New pieces will appear here when published.</p>}
@@ -707,7 +745,7 @@ export default function App() {
         {searchOpen && <input className="archive-search" aria-label="Search entries" placeholder="Find a title or a line…" value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />}
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
-            <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); readerRef.current?.showModal(); }}>
+            <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
               <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<blockquote>{poem.excerpt}</blockquote></div>
               <div className="entry-content">
               <div className="poem-meta">
@@ -719,7 +757,7 @@ export default function App() {
               <p>{poem.excerpt}</p>
               <div className="entry-actions">
                 <button className={`favorite-button ${likedNumbers.includes(poem.number) ? "is-liked" : ""}`} aria-label={`${likedNumbers.includes(poem.number) ? "Unlike" : "Like"} ${poem.title}`} aria-pressed={likedNumbers.includes(poem.number)} onClick={() => void toggleLike(poem)}><svg viewBox="0 0 24 24" fill={likedNumbers.includes(poem.number) ? "currentColor" : "none"}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{poem.likes}</span></button>
-                <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); readerRef.current?.showModal(); }}>Read piece <ArrowIcon /></button>
+                <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); }}>Read piece <ArrowIcon /></button>
                 {isOwner && <>
                   <button className="entry-edit-button" aria-label={`Edit ${poem.title}`} onClick={() => editArchiveEntry(poem)}>Edit</button>
                   <button className="entry-delete-button" aria-label={`Delete ${poem.title}`} disabled={deletingNumber === poem.number} onClick={() => requestDelete(poem)}>{deletingNumber === poem.number ? "Deleting…" : "Delete"}</button>
@@ -729,10 +767,9 @@ export default function App() {
             </article>
           ))}
         </div>
-        {(query || collectionFilter) && visibleEntries.length === 0 && <p className="empty-archive">No entries found. Try another filter.</p>}
+        {!archiveLoading && !archiveError && entries.length > 0 && visibleEntries.length === 0 && <p className="empty-archive">{entryPeriod === "previous" && periodEntries.length === 0 ? "No previous entries yet. Earlier pieces will appear here as the archive grows." : "No entries found in this group. Try another filter or entry period."}</p>}
       </section>
-      {collectionsOpen && <dialog className="poem-reader collections-modal" open onClick={(event) => { if (event.target === event.currentTarget) setCollectionsOpen(false); }}>
-        <button className="reader-close" onClick={() => setCollectionsOpen(false)} aria-label="Close collections">×</button>
+      <ArchiveDialog open={collectionsOpen} onClose={() => setCollectionsOpen(false)} closeLabel="Close collections" ariaLabel="Browse collections" className="collections-modal">
         <p className="eyebrow">The archive</p>
         <h2>Browse collections.</h2>
         <input className="collection-search" aria-label="Search collections" placeholder="Search collections…" value={collectionQuery} onChange={(event) => setCollectionQuery(event.target.value)} />
@@ -740,9 +777,8 @@ export default function App() {
           {collectionNames.filter((name) => name.toLowerCase().includes(collectionQuery.toLowerCase())).map((name, index) => <button key={name} className="collection-stack-card" style={{ animationDelay: `${index * 60}ms` }} onClick={() => { setCollectionFilter(name); setCollectionsOpen(false); document.getElementById("poems")?.scrollIntoView({ behavior: "smooth" }); }}><span>{String(index + 1).padStart(2, "0")}</span><strong>{name}</strong><small>{entries.filter((entry) => entry.collection === name).length} pieces</small><ArrowIcon /></button>)}
         </div>
         {collectionFilter && <button className="clear-collection-filter" onClick={() => { setCollectionFilter(""); setCollectionsOpen(false); }}>Show all collections</button>}
-      </dialog>}
-      {editOpen && <dialog className="poem-reader edit-modal" open>
-        <button className="reader-close" onClick={() => setEditOpen(false)} aria-label="Close edit entry">×</button>
+      </ArchiveDialog>
+      <ArchiveDialog open={editOpen} onClose={() => setEditOpen(false)} closeLabel="Close edit entry" ariaLabel="Edit this piece" className="edit-modal">
         <p className="eyebrow">Card studio</p>
         <h2>Edit this piece.</h2>
         <div className="edit-modal-fields">
@@ -756,9 +792,8 @@ export default function App() {
         </div>
         <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-pressed={activeTheme === index}>{option.name}</button>)}</div></div>
         <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
-      </dialog>}
-      <dialog className="poem-reader" ref={readerRef} onClick={(event) => { if (event.target === event.currentTarget) readerRef.current?.close(); }}>
-        <button className="reader-close" onClick={() => readerRef.current?.close()} aria-label="Close poem">×</button>
+      </ArchiveDialog>
+      <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
           {reading?.image_url && <img src={reading.image_url} alt="" />}
           <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2>{reading?.title}</h2><p className="reader-body">{reading?.excerpt}</p>
@@ -772,7 +807,7 @@ export default function App() {
           <p className="reader-share-hint">Downloads your image using the studio’s selected palette and opens Instagram. Select the image there to finish posting.</p>
           {readerShareStatus && <div className="reader-share-feedback"><p role="status">{readerShareStatus}</p><a className="instagram-open-link" href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">Open Instagram ↗</a></div>}
         </div>
-      </dialog>
+      </ArchiveDialog>
 
       <section className="about" id="about">
         <div className="about-mark" aria-hidden="true">“</div>
@@ -805,12 +840,14 @@ export default function App() {
           </div>
           <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} /><span>{body.length} / 360 characters</span></label>
           <div className="profile-settings">
-            <div className="studio-panel-heading"><span className="studio-step">03</span><h3>Customize the poet</h3></div>
+            <div className="studio-panel-heading"><span className="studio-step">03</span><h3>Archive settings</h3></div>
+            <label>Hero volume<input type="number" min="1" max="9999" step="1" inputMode="numeric" value={archiveVolume} onChange={(event) => setArchiveVolume(event.target.value)} aria-invalid={!volumeValid} aria-describedby="archive-volume-help" /></label>
+            <small id="archive-volume-help">Shown as “Personal archive · VOL {volumeLabel}” in Quiet hours.</small>
             <label>Poet name<input value={poetName} onChange={(event) => setPoetName(event.target.value)} maxLength={40} /></label>
             <label>Poet quote<textarea value={poetQuote} onChange={(event) => setPoetQuote(event.target.value)} maxLength={180} rows={3} /></label>
             <label>Poet text<textarea value={poetBio} onChange={(event) => setPoetBio(event.target.value)} maxLength={360} rows={4} /></label>
             <div className="profile-controls"><label>Text size<input type="range" min="70" max="150" value={poetTextSize} onChange={(event) => setPoetTextSize(Number(event.target.value))} /><span>{poetTextSize}%</span></label><label>Text color<input type="color" value={poetTextColor} onChange={(event) => setPoetTextColor(event.target.value)} /></label></div>
-            <button className="profile-save-button" onClick={() => void savePoetProfile()} disabled={profileSaving}>{profileSaving ? "Saving…" : "Save poet profile"}</button>
+            <button className="profile-save-button" onClick={() => void savePoetProfile()} disabled={profileSaving || !volumeValid}>{profileSaving ? "Saving…" : "Save archive settings"}</button>
             {profileStatus && <p className="studio-share-feedback" role="status">{profileStatus}</p>}
           </div>
         </div>
@@ -838,12 +875,12 @@ export default function App() {
         </div>
       </section>}
 
-      {deleteCandidate && <dialog className="poem-reader delete-modal" open>
+      <ArchiveDialog open={deleteCandidate !== null} onClose={() => setDeleteCandidate(null)} closeLabel="Close delete confirmation" ariaLabel="Delete this piece?" className="delete-modal">
         <p className="eyebrow">Permanent action</p>
         <h2>Delete this piece?</h2>
-        <p className="delete-modal-copy">“{deleteCandidate.title}” will be removed from the archive. This cannot be undone.</p>
-        <div className="delete-modal-actions"><button className="delete-cancel-button" onClick={() => setDeleteCandidate(null)}>Keep piece</button><button className="delete-confirm-button" onClick={() => { const entry = deleteCandidate; setDeleteCandidate(null); void removeArchiveEntry(entry); }}>Delete permanently</button></div>
-      </dialog>}
+        <p className="delete-modal-copy">“{deleteCandidate?.title}” will be removed from the archive. This cannot be undone.</p>
+        <div className="delete-modal-actions"><button className="delete-cancel-button" onClick={() => setDeleteCandidate(null)}>Keep piece</button><button className="delete-confirm-button" onClick={() => { if (!deleteCandidate) return; const entry = deleteCandidate; setDeleteCandidate(null); void removeArchiveEntry(entry); }}>Delete permanently</button></div>
+      </ArchiveDialog>
       <footer className="site-footer">
         <a className="wordmark" href="#top"><span className="archive-name">Mikhai: A Personal Archive</span></a>
         <p>Made for words worth keeping.</p>

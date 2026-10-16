@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { supabase, archiveRequest, authLog } from "../lib/supabase";
+import ArchiveDialog from "./ArchiveDialog";
 
 type Props = { open: boolean; onClose: () => void; onSuccess: () => void };
 
 export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -14,9 +14,7 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
   useEffect(() => {
     if (open) {
       setError("");
-      dialogRef.current?.showModal();
     } else {
-      dialogRef.current?.close();
       setPassword("");
     }
   }, [open]);
@@ -40,8 +38,7 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  return <dialog className="poem-reader owner-login" ref={dialogRef} onClose={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <button className="reader-close" onClick={onClose} aria-label="Close owner login">×</button>
+  return <ArchiveDialog open={open} className="owner-login" onClose={onClose} closeLabel="Close owner login" ariaLabel="Owner login">
     <p className="eyebrow">A private writing space</p>
     <h2>Welcome back.</h2>
     <p className="owner-login-intro">Sign in as the archive owner to enter Card Studio.</p>
@@ -52,5 +49,5 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
       <button className="owner-login-submit" disabled={loading}>{loading ? "Verifying access…" : "Sign in to Card Studio"}</button>
     </form>
     <p className="owner-login-note">Owner access only. The poetry archive remains open to everyone.</p>
-  </dialog>;
+  </ArchiveDialog>;
 }

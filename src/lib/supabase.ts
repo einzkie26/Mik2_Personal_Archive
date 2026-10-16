@@ -19,14 +19,22 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   if (path === "/profile") {
     if (body !== undefined) {
       await archiveRequest("/owner", token);
-      const input = body as { poet_name: string; quote: string; bio: string; text_size: number; text_color: string };
+      const input = body as { poet_name: string; quote: string; bio: string; text_size: number; text_color: string; volume: number };
+      if (!input || typeof input !== "object" || !Number.isInteger(input.volume) || input.volume < 1 || input.volume > 9999) {
+        throw new Error("Volume must be a whole number from 1 to 9999.");
+      }
       const { data, error } = await database.from("archive_profile").upsert({ id: true, ...input, updated_at: new Date().toISOString() }).select("*").single();
-      if (error) throw new Error("The poet profile could not be saved. Check your owner permissions and database setup.");
+      if (error) {
+        if ((error.code === "PGRST204" || error.code === "42703") && /\bvolume\b/i.test(error.message)) {
+          throw new Error("Archive settings need a database update before the volume can be saved.");
+        }
+        throw new Error("The poet profile could not be saved. Check your owner permissions and database setup.");
+      }
       return data;
     }
     const { data, error } = await database.from("archive_profile").select("*").eq("id", true).single();
     if (error) throw new Error("The poet profile is not available. Please apply the archive migration in Supabase.");
-    return data;
+    return { ...data, volume: Number.isInteger(data.volume) && data.volume >= 1 && data.volume <= 9999 ? data.volume : 1 };
   }
   if (path !== "/entries") throw new Error("Unknown archive request.");
   if (body !== undefined) {
@@ -41,12 +49,12 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
       collection_id: collection.id, is_public: input.is_public, image_url: input.image_url || null,
       theme_background: input.theme_background, theme_ink: input.theme_ink, theme_accent: input.theme_accent,
       updated_at: new Date().toISOString(),
-    }).select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent").single();
+    }).select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,created_at,updated_at").single();
     if (error) throw new Error("The entry could not be saved. Check your owner permissions and database setup.");
     return { entry: { ...entry, collection: collectionName } };
   }
   const [entriesResult, piecesResult, collectionsResult] = await Promise.all([
-    database.from("archive_entries").select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,collection:archive_collections(name)").order("updated_at", { ascending: false }),
+    database.from("archive_entries").select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,created_at,updated_at,collection:archive_collections(name)").order("created_at", { ascending: false }).order("updated_at", { ascending: false }).order("number", { ascending: true }),
     database.from("archive_entries").select("number", { count: "exact", head: true }),
     database.from("archive_collections").select("id", { count: "exact", head: true }),
   ]);

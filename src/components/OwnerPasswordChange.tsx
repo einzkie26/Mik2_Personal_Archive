@@ -1,20 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { authLog, supabase } from "../lib/supabase";
+import ArchiveDialog from "./ArchiveDialog";
 
 type Props = { open: boolean; onComplete: () => void; onLogout: () => void; onSkip: () => void };
 
 export default function OwnerPasswordChange({ open, onComplete, onLogout, onSkip }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (open && !dialogRef.current?.open) dialogRef.current?.showModal();
-    if (!open) dialogRef.current?.close();
-  }, [open]);
 
   const changePassword = async (event: FormEvent) => {
     event.preventDefault();
@@ -46,7 +41,7 @@ export default function OwnerPasswordChange({ open, onComplete, onLogout, onSkip
     onComplete();
   };
 
-  return <dialog className="poem-reader owner-login owner-password-change" ref={dialogRef} onCancel={(event) => event.preventDefault()}>
+  return <ArchiveDialog open={open} className="owner-login owner-password-change" closeOnBackdrop={false} onCancel={(event) => event.preventDefault()} ariaLabel="Choose a new password">
     <p className="eyebrow">Secure your archive</p>
     <h2>Choose a new password.</h2>
     <p className="owner-login-intro">Before entering Card Studio, replace your temporary password with one only you know.</p>
@@ -61,5 +56,5 @@ export default function OwnerPasswordChange({ open, onComplete, onLogout, onSkip
       <button type="button" className="owner-password-logout" onClick={onLogout}>Log out</button>
     </div>
     <p className="owner-login-note">This step is required once for your owner account.</p>
-  </dialog>;
+  </ArchiveDialog>;
 }
