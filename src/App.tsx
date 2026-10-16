@@ -892,9 +892,14 @@ export default function App() {
         {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
       </ArchiveDialog>
       <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
-        <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
+        <div className={`reader-palette${reading?.image_url ? " has-card-image" : ""}`} style={{
+          backgroundColor: reading?.theme_background,
+          color: reading?.theme_ink,
+          borderColor: reading?.theme_accent,
+          "--quote-image-color": reading?.theme_background || "var(--archive-paper)",
+          "--quote-image": reading?.image_url ? `url(${JSON.stringify(reading.image_url)})` : undefined,
+        } as CSSProperties}>
           <CardShadow value={reading?.shadow_overlay} />
-          {reading?.image_url && <img src={reading.image_url} alt="" />}
           <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family, fontSize: `${25 * getPoemTextSize(reading?.poem_text_size) / 100}px` }}>{reading?.excerpt}</p>
         </div>
         <div className="reader-share-section">

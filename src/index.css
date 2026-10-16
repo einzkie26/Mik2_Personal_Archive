@@ -672,9 +672,10 @@ button:hover, a:hover { opacity: .8; }
 .edit-style-preview p { position: relative; margin: 12px 0 0; white-space: pre-line; font-size: 20px; line-height: 1.5; }
 .image-upload-button { display: inline-flex; align-items: center; justify-content: center; margin: 14px 0 12px; border: 1px dashed var(--archive-rule); border-radius: 10px; padding: 12px; color: var(--archive-muted); font-size: 11px; cursor: pointer; }
 .image-upload-button input { display: none; }
-/* Paint uploaded artwork inside the quote itself, never across the article body.
+/* Paint uploaded artwork across its quote or reader panel, clipped to the panel.
    A palette wash matches the studio/export's 28% image opacity and preserves PNG alpha. */
-.quote-panel.has-card-image {
+.quote-panel.has-card-image,
+.reader-palette.has-card-image {
   background-image: linear-gradient(
     color-mix(in srgb, var(--quote-image-color) 72%, transparent),
     color-mix(in srgb, var(--quote-image-color) 72%, transparent)
@@ -688,7 +689,6 @@ button:hover, a:hover { opacity: .8; }
 .quote-panel blockquote { position: relative; z-index: 1; }
 .reader-palette { position: relative; isolation: isolate; overflow: hidden; margin: -15px -5px 28px; padding: 24px; border: 1px solid; border-radius: 14px; }
 .reader-palette > :not(.card-shadow-overlay) { position: relative; }
-.reader-palette > img { display: block; width: 100%; max-height: 180px; object-fit: contain; margin-bottom: 20px; }
 .reader-palette .eyebrow { color: currentColor; opacity: .7; }
 .reader-palette h2, .reader-palette .reader-body { color: currentColor; }
 .portfolio-shell .studio select { width: 100%; border: 1px solid var(--archive-rule); border-radius: 10px; padding: 13px 14px; margin-top: 6px; background: color-mix(in srgb, var(--archive-paper) 65%, transparent); color: var(--archive-ink); font: 400 15px/1.4 "DM Sans", sans-serif; }
