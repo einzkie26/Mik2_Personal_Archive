@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
+import CollectionPicker from "./components/CollectionPicker";
 import { usesStableRendering } from "./lib/browser";
 import { archiveRequest, authLog, deleteArchiveEntry, supabase, toggleArchiveLike } from "./lib/supabase";
 
@@ -158,6 +159,8 @@ export default function App() {
   const [readerSharing, setReaderSharing] = useState(false);
   const [category, setCategory] = useState<EntryCategory>("Poem");
   const [collection, setCollection] = useState("Personal collection");
+  const [creatingCollection, setCreatingCollection] = useState(false);
+  const [savedCollectionNames, setSavedCollectionNames] = useState<string[]>([]);
   const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
   const entries = archiveEntries;
   const [archiveCounts, setArchiveCounts] = useState<{ pieces: number; collections: number } | null>(null);
@@ -203,6 +206,11 @@ export default function App() {
   const volumeNumber = Number(archiveVolume);
   const volumeValid = Number.isInteger(volumeNumber) && volumeNumber >= 1 && volumeNumber <= 9999;
   const volumeLabel = volumeValid ? volumeNumber : 1;
+  const collectionValid = Boolean(collection.trim());
+  const updateCollection = (name: string, creatingNew: boolean) => {
+    setCollection(name);
+    setCreatingCollection(creatingNew);
+  };
   // Compare draft references without copying a potentially large image data URL.
   const cardDraft = useMemo(
     () => ({ author, title, body, activeTheme, category, collection, isPublic, cardImage }),
@@ -291,6 +299,7 @@ export default function App() {
         const result = await archiveRequest("/entries");
         if (cancelled || sequence !== requestSequence) return;
         setArchiveEntries(result.entries);
+        setSavedCollectionNames(result.collectionNames);
         setArchiveCounts({ pieces: result.pieces, collections: result.collections });
         setArchiveError("");
       } catch (error) {
@@ -404,7 +413,8 @@ export default function App() {
       setBody(parsed.body || body);
       setActiveTheme(parsed.activeTheme ?? 0);
       if (["Poem", "Prose", "Note"].includes(parsed.category)) setCategory(parsed.category);
-      if (typeof parsed.collection === "string") setCollection(parsed.collection);
+      if (typeof parsed.collection === "string") setCollection(parsed.collection.trim() || "Personal collection");
+      setCreatingCollection(false);
     } catch {
       localStorage.removeItem("verse-poem-draft");
     }
@@ -530,7 +540,7 @@ export default function App() {
   }, [cardDraft, isOwner]);
 
   const sharePoem = async (shouldShare = true) => {
-    if (!isOwner || !session || sharing || !body.trim() || preparedCard?.draft !== cardDraft) return;
+    if (!isOwner || !session || sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft) return;
     const file = preparedCard.file;
     const existing = editingNumber
       ? archiveEntries.find((entry) => entry.number === editingNumber)
@@ -559,6 +569,9 @@ export default function App() {
       if (!data.session) throw new Error("Please sign in again to publish your piece.");
       const result = await archiveRequest("/entries", data.session.access_token, entry);
       setArchiveEntries((current) => [result.entry, ...current.filter((item) => item.number !== entry.number)]);
+      setSavedCollectionNames((current) => Array.from(new Set([...current, result.entry.collection])));
+      setCollection(result.entry.collection);
+      setCreatingCollection(false);
         setEditingNumber(null);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
@@ -601,6 +614,7 @@ export default function App() {
     setBody(entry.excerpt);
     setCategory(entry.category);
     setCollection(entry.collection || "Personal collection");
+    setCreatingCollection(false);
     setIsPublic(entry.is_public);
     setCardImage(entry.image_url || "");
     const matchingTheme = themes.findIndex((option) => option.background === entry.theme_background && option.ink === entry.theme_ink && option.accent === entry.theme_accent);
@@ -783,7 +797,7 @@ export default function App() {
         <h2>Edit this piece.</h2>
         <div className="edit-modal-fields">
           <label>Type<select value={category} onChange={(event) => setCategory(event.target.value as EntryCategory)}><option>Poem</option><option>Prose</option><option>Note</option></select></label>
-          <label>Collection<input value={collection} onChange={(event) => setCollection(event.target.value)} maxLength={80} /></label>
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={editOpen} />
           <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
           <label>Author<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
           <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} /></label>
@@ -791,7 +805,7 @@ export default function App() {
           <label>Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
         </div>
         <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-pressed={activeTheme === index}>{option.name}</button>)}</div></div>
-        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
+        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
       </ArchiveDialog>
       <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className="reader-palette" style={{ backgroundColor: reading?.theme_background, color: reading?.theme_ink, borderColor: reading?.theme_accent }}>
@@ -832,7 +846,7 @@ export default function App() {
             <legend>What are you writing?</legend>
             <div className="entry-type-options">{(["Poem", "Prose", "Note"] as const).map((option) => <button key={option} aria-pressed={category === option} className={category === option ? "selected" : ""} onClick={() => setCategory(option)}>{option}</button>)}</div>
           </fieldset>
-          <label>Collection<input value={collection} onChange={(event) => setCollection(event.target.value)} maxLength={80} list="archive-collection-names" placeholder="Name your collection" /><datalist id="archive-collection-names">{Array.from(new Set(entries.map((entry) => entry.collection).filter(Boolean))).map((name) => <option key={name} value={name} />)}</datalist></label>
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={!editOpen} />
           <label>Archive visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public — visible in the archive</option><option value="hidden">Hidden — owner only</option></select></label>
           <div className="studio-fields">
             <label>Your name<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
@@ -867,7 +881,7 @@ export default function App() {
             <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
           </fieldset>
           <div className="studio-share-area">
-            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || !body.trim() || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
+            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
             <p>Sharing saves to your archive and downloads an image.</p>
             <small>Opens Instagram in a new tab. Create a post and select the downloaded image.</small>
             {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}

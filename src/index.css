@@ -643,6 +643,8 @@ button:hover, a:hover { opacity: .8; }
 .delete-confirm-button { border: 0; background: #a94432; color: #fff9ee; }
 .edit-modal { max-width: 760px; }
 .edit-modal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.collection-picker { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.collection-picker-help { color: var(--archive-muted); font-size: 11px; line-height: 1.5; }
 .edit-modal-fields label { display: flex; flex-direction: column; gap: 7px; color: var(--archive-muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .edit-modal-fields input, .edit-modal-fields textarea, .edit-modal-fields select { width: 100%; border: 1px solid var(--archive-rule); border-radius: 10px; padding: 12px; background: var(--archive-ground); color: var(--archive-ink); font: 400 15px/1.5 "DM Sans", sans-serif; text-transform: none; letter-spacing: 0; }
 .edit-modal-wide { grid-column: 1 / -1; }

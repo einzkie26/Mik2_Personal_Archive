@@ -56,7 +56,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
   const [entriesResult, piecesResult, collectionsResult] = await Promise.all([
     database.from("archive_entries").select("number,title,excerpt,category,date,tone,author,is_public,image_url,theme_background,theme_ink,theme_accent,created_at,updated_at,collection:archive_collections(name)").order("created_at", { ascending: false }).order("updated_at", { ascending: false }).order("number", { ascending: true }),
     database.from("archive_entries").select("number", { count: "exact", head: true }),
-    database.from("archive_collections").select("id", { count: "exact", head: true }),
+    database.from("archive_collections").select("name", { count: "exact" }).order("name"),
   ]);
   const likesResult = await database.from("archive_entry_likes").select("entry_number");
   if (entriesResult.error || piecesResult.error || collectionsResult.error || likesResult.error || piecesResult.count === null || collectionsResult.count === null) throw new Error("The archive database is not available. Please apply the archive migration in Supabase.");
@@ -71,6 +71,7 @@ export async function archiveRequest(path: string, token?: string, body?: unknow
     }),
     pieces: piecesResult.count,
     collections: collectionsResult.count,
+    collectionNames: collectionsResult.data.map((collection) => collection.name),
   };
 }
 
