@@ -10,6 +10,9 @@ import CardShadow from "./components/CardShadow";
 import ShadowPicker from "./components/ShadowPicker";
 import PoemSizeControl from "./components/PoemSizeControl";
 import CardImageControls from "./components/CardImageControls";
+import EditEntryDialog from "./components/EditEntryDialog";
+import type { ArchiveEntry, EntryCategory } from "./lib/archiveTypes";
+import { cardThemes as themes } from "./lib/cardThemes";
 import CardImageEditor, { type ImageEditRequest } from "./components/CardImageEditor";
 import type { ImageCrop } from "./lib/imageCrop";
 import { usesStableRendering } from "./lib/browser";
@@ -18,14 +21,6 @@ import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/car
 import { defaultPoemTextSize, getPoemTextSize } from "./lib/poemTextSize";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
-type Theme = {
-  name: string;
-  background: string;
-  ink: string;
-  accent: string;
-};
-
-type EntryCategory = "Poem" | "Prose" | "Note";
 type EntryPeriod = "latest" | "previous";
 type CardDraft = {
   author: string;
@@ -40,49 +35,12 @@ type CardDraft = {
   isPublic: boolean;
   cardImage: string;
 };
-type ArchiveEntry = {
-  number: string;
-  title: string;
-  excerpt: string;
-  category: EntryCategory;
-  date: string;
-  created_at?: string;
-  updated_at?: string;
-  tone: string;
-  author?: string;
-  collection?: string;
-  is_public: boolean;
-  likes: number;
-  image_url?: string | null;
-  theme_background?: string;
-  theme_ink?: string;
-  theme_accent?: string;
-  font_family?: string;
-  shadow_overlay?: string;
-  poem_text_size?: number;
-};
-
 const latestEntryCount = 6;
 
 function entryPublicationTime(entry: ArchiveEntry) {
   const timestamp = Date.parse(entry.created_at || entry.date);
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
-
-const themes: Theme[] = [
-  { name: "Clay", background: "#bf593f", ink: "#fff9ee", accent: "#f4c7a1" },
-  { name: "Night", background: "#172c2b", ink: "#f7f0df", accent: "#9fb5a6" },
-  { name: "Paper", background: "#eee5d4", ink: "#29251f", accent: "#b64d36" },
-  { name: "Rose", background: "#f1d9df", ink: "#542c3c", accent: "#8b4059" },
-  { name: "Sage", background: "#dce5d6", ink: "#293e2c", accent: "#586e43" },
-  { name: "Ocean", background: "#183c61", ink: "#f1f7fc", accent: "#9ed6e2" },
-  { name: "Lilac", background: "#e5dcf2", ink: "#44325c", accent: "#765398" },
-  { name: "Honey", background: "#f5dea2", ink: "#4c361d", accent: "#855525" },
-  { name: "Ink", background: "#242329", ink: "#f5f2eb", accent: "#c4b7e3" },
-  { name: "Sky", background: "#d9ebf4", ink: "#233e57", accent: "#426e91" },
-  { name: "Wine", background: "#632c43", ink: "#fff2e6", accent: "#e5b2a2" },
-  { name: "Pearl", background: "#faf9f5", ink: "#333735", accent: "#626c64" },
-];
 
 function ArrowIcon() {
   return (
@@ -182,8 +140,7 @@ export default function App() {
   const [sharing, setSharing] = useState(false);
   const [deletingNumber, setDeletingNumber] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<ArchiveEntry | null>(null);
-  const [editingNumber, setEditingNumber] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ArchiveEntry | null>(null);
   const [isPublic, setIsPublic] = useState(true);
   const [poetName, setPoetName] = useState("Mikhai");
   const [poetQuote, setPoetQuote] = useState("I write to notice what would otherwise pass me by.");
@@ -586,14 +543,11 @@ export default function App() {
     };
   }, [cardDraft, isOwner]);
 
-  const sharePoem = async (shouldShare = true) => {
+  const sharePoem = async () => {
     if (!isOwner || !session || sharing || deletingCollection || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft) return;
     const file = preparedCard.file;
-    const existing = editingNumber
-      ? archiveEntries.find((entry) => entry.number === editingNumber)
-      : archiveEntries.find((entry) => entry.title === (title.trim() || "Untitled") && entry.excerpt === body.trim() && entry.category === category && entry.author === author);
     const entry: ArchiveEntry = {
-      number: existing?.number || crypto.randomUUID(),
+      number: crypto.randomUUID(),
       title: title.trim() || "Untitled",
       excerpt: body.trim(),
       category,
@@ -607,12 +561,12 @@ export default function App() {
       font_family: fontFamily,
       shadow_overlay: shadowOverlay,
       poem_text_size: poemTextSize,
-      likes: existing?.likes || 0,
-      date: existing?.date || new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+      likes: 0,
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
     };
     setSharing(true);
-    const instagramWindow = shouldShare ? window.open("", "_blank") : null;
+    const instagramWindow = window.open("", "_blank");
     if (instagramWindow) instagramWindow.opener = null;
     try {
       const { data } = await supabase.auth.getSession();
@@ -622,18 +576,11 @@ export default function App() {
       setSavedCollectionNames((current) => Array.from(new Set([...current, result.entry.collection])));
       setCollection(result.entry.collection);
       setCreatingCollection(false);
-      setEditingNumber(null);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
       instagramWindow?.close();
       setShareStatus(error instanceof Error ? error.message : "The archive could not be saved. Please try again.");
       setSharing(false);
-      return;
-    }
-    if (!shouldShare) {
-      setShareStatus("Archive entry updated.");
-      setSharing(false);
-      setEditOpen(false);
       return;
     }
     try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
@@ -657,24 +604,25 @@ export default function App() {
     setSharing(false);
   };
 
-  const editArchiveEntry = (entry: ArchiveEntry) => {
-    setEditingNumber(entry.number);
-    setAuthor(entry.author || "Mara Ellis");
-    setTitle(entry.title);
-    setBody(entry.excerpt);
-    setCategory(entry.category);
-    setCollection(entry.collection || "Personal collection");
-    setCreatingCollection(false);
-    setIsPublic(entry.is_public);
-    setCardImage(entry.image_url || "");
-    setFontFamily(getCardFont(entry.font_family).id);
-    setShadowOverlay(getCardShadow(entry.shadow_overlay).id);
-    setPoemTextSize(getPoemTextSize(entry.poem_text_size));
-    const matchingTheme = themes.findIndex((option) => option.background === entry.theme_background && option.ink === entry.theme_ink && option.accent === entry.theme_accent);
-    if (matchingTheme >= 0) setActiveTheme(matchingTheme);
-    setShareStatus("");
-    setCollectionStatus("");
-    setEditOpen(true);
+  const saveEditedEntry = async (entry: ArchiveEntry) => {
+    const openedEntry = editingEntry;
+    if (!isOwner || !session || !openedEntry || openedEntry.number !== entry.number) throw new Error("Please sign in again to edit this piece.");
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw new Error("Please sign in again to save your changes.");
+    const result = await archiveRequest("/entries", data.session.access_token, entry);
+    setArchiveEntries(current => [result.entry, ...current.filter(item => item.number !== entry.number)]);
+    setSavedCollectionNames(current => Array.from(new Set([...current, result.entry.collection])));
+    setEditingEntry(current => current === openedEntry ? null : current);
+    window.dispatchEvent(new Event("archive-published"));
+  };
+
+  const deleteCollection = async (name: string) => {
+    if (!session || !isOwner) throw new Error("Please sign in again to delete this collection.");
+    await deleteEmptyArchiveCollection(name, session.access_token);
+    setSavedCollectionNames(current => current.filter(collectionName => collectionName !== name));
+    if (collectionFilter === name) setCollectionFilter("");
+    setArchiveCounts(current => current ? { ...current, collections: Math.max(0, current.collections - 1) } : current);
+    window.dispatchEvent(new Event("archive-published"));
   };
 
   const removeEmptyCollection = async () => {
@@ -683,15 +631,11 @@ export default function App() {
     setDeletingCollection(name);
     setCollectionStatus("");
     try {
-      await deleteEmptyArchiveCollection(name, session.access_token);
+      await deleteCollection(name);
       const remaining = savedCollectionNames.filter((savedName) => savedName !== name);
-      setSavedCollectionNames(remaining);
       setCollection(remaining[0] || "");
       setCreatingCollection(remaining.length === 0);
-      if (collectionFilter === name) setCollectionFilter("");
-      setArchiveCounts((current) => current ? { ...current, collections: Math.max(0, current.collections - 1) } : current);
       setCollectionStatus(`Deleted “${name}”.`);
-      window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
       setCollectionStatus(error instanceof Error ? error.message : "The collection could not be deleted.");
     } finally {
@@ -735,7 +679,7 @@ export default function App() {
     try {
       await deleteArchiveEntry(entry.number, session.access_token);
       setArchiveEntries((current) => current.filter((item) => item.number !== entry.number));
-      if (editingNumber === entry.number) setEditingNumber(null);
+      setEditingEntry(current => current?.number === entry.number ? null : current);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
       setShareStatus(error instanceof Error ? error.message : "The entry could not be deleted. Please try again.");
@@ -861,7 +805,7 @@ export default function App() {
                 <button className={`favorite-button ${likedNumbers.includes(poem.number) ? "is-liked" : ""}`} aria-label={`${likedNumbers.includes(poem.number) ? "Unlike" : "Like"} ${poem.title}`} aria-pressed={likedNumbers.includes(poem.number)} onClick={() => void toggleLike(poem)}><svg viewBox="0 0 24 24" fill={likedNumbers.includes(poem.number) ? "currentColor" : "none"}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{poem.likes}</span></button>
                 <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); }}>Read piece <ArrowIcon /></button>
                 {isOwner && <>
-                  <button className="entry-edit-button" aria-label={`Edit ${poem.title}`} onClick={() => editArchiveEntry(poem)}>Edit</button>
+                  <button className="entry-edit-button" aria-label={`Edit ${poem.title}`} onClick={() => setEditingEntry({ ...poem })}>Edit</button>
                   <button className="entry-delete-button" aria-label={`Delete ${poem.title}`} disabled={deletingNumber === poem.number} onClick={() => requestDelete(poem)}>{deletingNumber === poem.number ? "Deleting…" : "Delete"}</button>
                 </>}
               </div>
@@ -880,33 +824,15 @@ export default function App() {
         </div>
         {collectionFilter && <button className="clear-collection-filter" onClick={() => { setCollectionFilter(""); setCollectionsOpen(false); }}>Show all collections</button>}
       </ArchiveDialog>
-      <ArchiveDialog open={editOpen} onClose={() => setEditOpen(false)} closeLabel="Close edit entry" ariaLabel="Edit this piece" className="edit-modal">
-        <p className="eyebrow">Card studio</p>
-        <h2>Edit this piece.</h2>
-        <div className="edit-modal-fields">
-          <label>Type<select value={category} onChange={(event) => setCategory(event.target.value as EntryCategory)}><option>Poem</option><option>Prose</option><option>Note</option></select></label>
-          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={editOpen} onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
-          <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={48} /></label>
-          <label>Author<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
-          <label className="edit-modal-wide">Text<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={6} style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /></label>
-          <FontPicker value={fontFamily} onChange={setFontFamily} />
-          <label>Visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
-          <div className="edit-modal-wide"><PoemSizeControl value={poemTextSize} onChange={setPoemTextSize} /></div>
-          <div className="edit-modal-wide"><CardImageControls {...imageControls} /></div>
-        </div>
-        <div className="edit-modal-palette">
-          <p className="eyebrow">Palette</p>
-          <div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div>
-          <div className={`edit-style-preview${cardImage ? " has-card-image" : ""}`} style={{
-            backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family,
-            "--quote-image-color": theme.background,
-            "--quote-image": cardImage ? `url(${JSON.stringify(cardImage)})` : undefined,
-          } as CSSProperties}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{body || "Your words will appear here."}</p></div>
-        </div>
-        <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
-        <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
-        {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
-      </ArchiveDialog>
+      {editingEntry && <EditEntryDialog
+        key={editingEntry.number}
+        entry={editingEntry}
+        collections={savedCollectionNames}
+        emptyCollections={!archiveLoading && !archiveError ? savedCollectionNames.filter(name => !entries.some(entry => entry.collection === name)) : []}
+        onClose={() => setEditingEntry(null)}
+        onSave={saveEditedEntry}
+        onDeleteCollection={deleteCollection}
+      />}
       <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className={`reader-palette${reading?.image_url ? " has-card-image" : ""}`} style={{
           backgroundColor: reading?.theme_background,
@@ -947,12 +873,12 @@ export default function App() {
           <p>A little space for your words. Write, choose a mood, and send them out into the world.</p>
         </div>
         <div className="editor">
-          <div className="studio-panel-heading"><span className="studio-step">01</span><h3>{editingNumber ? "Edit your piece" : "Write your piece"}</h3></div>
+          <div className="studio-panel-heading"><span className="studio-step">01</span><h3>Write your piece</h3></div>
           <fieldset>
             <legend>What are you writing?</legend>
             <div className="entry-type-options">{(["Poem", "Prose", "Note"] as const).map((option) => <button key={option} aria-pressed={category === option} className={category === option ? "selected" : ""} onClick={() => setCategory(option)}>{option}</button>)}</div>
           </fieldset>
-          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew={!editOpen} onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
           <label>Archive visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public — visible in the archive</option><option value="hidden">Hidden — owner only</option></select></label>
           <div className="studio-fields">
             <label>Your name<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
@@ -982,7 +908,7 @@ export default function App() {
           </fieldset>
           <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
           <div className="studio-share-area">
-            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : editingNumber ? "Update archive" : "Share to Instagram"}<ArrowIcon /></button>
+            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : "Share to Instagram"}<ArrowIcon /></button>
             <p>Sharing saves to your archive and downloads an image.</p>
             <small>Opens Instagram in a new tab. Create a post and select the downloaded image.</small>
             {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
