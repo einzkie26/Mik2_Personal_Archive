@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
@@ -827,7 +828,19 @@ export default function App() {
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
             <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
-              <div className={`quote-panel ${poem.tone}`} style={{ backgroundColor: poem.theme_background, color: poem.theme_ink }}><span aria-hidden="true">“</span>{poem.image_url && <img className="archive-card-image" src={poem.image_url} alt="" loading="lazy" decoding="async" />}<CardShadow value={poem.shadow_overlay} /><blockquote style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${25 * getPoemTextSize(poem.poem_text_size) / 100}px`, color: poem.theme_ink }}>{poem.excerpt}</blockquote></div>
+              <div
+                className={`quote-panel ${poem.tone}${poem.image_url ? " has-card-image" : ""}`}
+                style={{
+                  backgroundColor: poem.theme_background,
+                  color: poem.theme_ink,
+                  "--quote-image-color": poem.theme_background,
+                  "--quote-image": poem.image_url ? `url(${JSON.stringify(poem.image_url)})` : undefined,
+                } as CSSProperties}
+              >
+                <span aria-hidden="true">“</span>
+                <CardShadow value={poem.shadow_overlay} />
+                <blockquote style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${25 * getPoemTextSize(poem.poem_text_size) / 100}px`, color: poem.theme_ink }}>{poem.excerpt}</blockquote>
+              </div>
               <div className="entry-content">
               <div className="poem-meta">
                 <span>{poem.category}</span>
