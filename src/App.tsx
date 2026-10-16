@@ -9,6 +9,9 @@ import FontPicker from "./components/FontPicker";
 import CardShadow from "./components/CardShadow";
 import ShadowPicker from "./components/ShadowPicker";
 import PoemSizeControl from "./components/PoemSizeControl";
+import CardImageControls from "./components/CardImageControls";
+import CardImageEditor, { type ImageEditRequest } from "./components/CardImageEditor";
+import type { ImageCrop } from "./lib/imageCrop";
 import { usesStableRendering } from "./lib/browser";
 import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
 import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/cardShadows";
@@ -126,15 +129,6 @@ function wrapText(
   return lines;
 }
 
-function readImageFile(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("The image could not be read."));
-    reader.readAsDataURL(file);
-  });
-}
-
 function loadImage(source: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -200,6 +194,20 @@ export default function App() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileStatus, setProfileStatus] = useState("");
   const [cardImage, setCardImage] = useState("");
+  const [imageEdit, setImageEdit] = useState<ImageEditRequest | null>(null);
+  const originalImage = useRef<{ source: string; crop: ImageCrop; result: string } | null>(null);
+  const openImageEditor = (source = cardImage) => {
+    if (!source) return;
+    const cached = originalImage.current;
+    setImageEdit(cached?.result === source ? { source: cached.source, crop: cached.crop } : { source });
+  };
+  const imageControls = {
+    value: cardImage,
+    disabled: sharing,
+    onChoose: openImageEditor,
+    onEdit: () => openImageEditor(),
+    onRemove: () => { setCardImage(""); originalImage.current = null; },
+  };
   const [preparedCard, setPreparedCard] = useState<{ file: File; draft: CardDraft } | null>(null);
   const [likeVoterId] = useState(getLikeVoterId);
   const [likedNumbers, setLikedNumbers] = useState<string[]>(() => {
@@ -884,9 +892,17 @@ export default function App() {
           <FontPicker value={fontFamily} onChange={setFontFamily} />
           <label>Visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
           <div className="edit-modal-wide"><PoemSizeControl value={poemTextSize} onChange={setPoemTextSize} /></div>
-          <label className="edit-modal-wide">Image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
+          <div className="edit-modal-wide"><CardImageControls {...imageControls} /></div>
         </div>
-        <div className="edit-modal-palette"><p className="eyebrow">Palette</p><div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div><div className="edit-style-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family }}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{body || "Your words will appear here."}</p></div></div>
+        <div className="edit-modal-palette">
+          <p className="eyebrow">Palette</p>
+          <div className="theme-options">{themes.map((option, index) => <button type="button" className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-pressed={activeTheme === index}>{option.name}</button>)}</div>
+          <div className={`edit-style-preview${cardImage ? " has-card-image" : ""}`} style={{
+            backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family,
+            "--quote-image-color": theme.background,
+            "--quote-image": cardImage ? `url(${JSON.stringify(cardImage)})` : undefined,
+          } as CSSProperties}><CardShadow value={shadowOverlay} /><strong>{title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{body || "Your words will appear here."}</p></div>
+        </div>
         <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
         <button className="profile-save-button" onClick={() => void sharePoem(false)} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}>{sharing ? "Saving…" : "Save changes"}</button>
         {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
@@ -961,7 +977,7 @@ export default function App() {
           <fieldset className="studio-palette">
             <legend>Card palette</legend>
             <p className="palette-help">Choose a background and matching text colors.</p>
-            <label className="image-upload-button">Upload a transparent image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readImageFile(file).then(setCardImage); }} /></label>
+            <CardImageControls {...imageControls} />
             <div className="theme-options">{themes.map((option, index) => <button className={activeTheme === index ? "active" : ""} key={option.name} onClick={() => setActiveTheme(index)} style={activeTheme === index ? { backgroundColor: option.background, color: option.ink, borderColor: option.accent } : undefined} aria-label={"Use " + option.name + " palette"} aria-pressed={activeTheme === index}><span className="palette-swatches" aria-hidden="true"><i style={{ background: option.background }} /><i style={{ background: option.ink }} /><i style={{ background: option.accent }} /></span>{option.name}<span aria-hidden="true">{activeTheme === index ? "✓" : ""}</span></button>)}</div>
           </fieldset>
           <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
@@ -993,6 +1009,11 @@ export default function App() {
         <p className="delete-modal-copy">“{deleteCandidate?.title}” will be removed from the archive. This cannot be undone.</p>
         <div className="delete-modal-actions"><button className="delete-cancel-button" onClick={() => setDeleteCandidate(null)}>Keep piece</button><button className="delete-confirm-button" onClick={() => { if (!deleteCandidate) return; const entry = deleteCandidate; setDeleteCandidate(null); void removeArchiveEntry(entry); }}>Delete permanently</button></div>
       </ArchiveDialog>
+      <CardImageEditor image={imageEdit} background={theme.background} onClose={() => setImageEdit(null)} onApply={(source, crop, result) => {
+        originalImage.current = { source, crop, result };
+        setCardImage(result);
+        setImageEdit(null);
+      }} />
       <footer className="site-footer">
         <a className="wordmark" href="#top"><span className="archive-name">Mikhai: A Personal Archive</span></a>
         <p>Made for words worth keeping.</p>
