@@ -18,7 +18,8 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), { status
 
 function fixture(options = {}) {
   const calls = [];
-  const handler = createOwnerLoginHandler({ env: { ...secrets, ...options.env }, now: () => now, fetch: async (input, init) => {
+  const diagnostics = [];
+  const handler = createOwnerLoginHandler({ env: { ...secrets, ...options.env }, reportSecurityFailure: diagnostic => diagnostics.push(diagnostic), now: () => now, fetch: async (input, init) => {
     const url = new URL(input);
     const body = init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : JSON.parse(init.body || '{}');
     const call = { url, body, headers: init.headers };
@@ -42,7 +43,7 @@ function fixture(options = {}) {
     method: 'POST', headers: { Origin: 'https://archive.example.test', 'Content-Type': 'application/json', 'x-forwarded-for': '192.0.2.1' },
     body: JSON.stringify(body), ...overrides,
   });
-  return { calls, handler, request, run: (body, overrides) => handler(request(body, overrides)) };
+  return { calls, diagnostics, handler, request, run: (body, overrides) => handler(request(body, overrides)) };
 }
 
 test('valid Enterprise assessment authorizes only the actual owner Auth session, then returns tokens', async () => {
@@ -188,5 +189,64 @@ test('upstream outages and audit failures fail closed without leaking secrets', 
     assert.equal(result.status, 503);
     assert.equal((await result.text()).includes(secrets.RECAPTCHA_ENTERPRISE_API_KEY), false);
     assert.equal(f.calls.some(call => call.url.pathname === '/auth/v1/token'), false);
+  }
+});
+
+for (const [reason, code] of [
+  ['SERVICE_DISABLED', 'CAPTCHA_API_DISABLED'],
+  ['API_KEY_INVALID', 'CAPTCHA_API_KEY_INVALID'],
+  ['API_KEY_SERVICE_BLOCKED', 'CAPTCHA_API_KEY_RESTRICTED'],
+  ['API_KEY_HTTP_REFERRER_BLOCKED', 'CAPTCHA_API_KEY_RESTRICTED'],
+  ['API_KEY_IP_ADDRESS_BLOCKED', 'CAPTCHA_API_KEY_RESTRICTED'],
+  ['CONSUMER_INVALID', 'CAPTCHA_PROJECT_INVALID'],
+  ['BILLING_DISABLED', 'CAPTCHA_BILLING_REQUIRED'],
+]) test(`Google ${reason} produces a safe actionable reference`, async () => {
+  const f = fixture({ intercept: call => call.url.hostname === 'recaptchaenterprise.googleapis.com'
+    ? json({ error: { status: 'PERMISSION_DENIED', message: `${secrets.RECAPTCHA_ENTERPRISE_API_KEY} ${credentials.captchaToken}`, details: [{ reason, metadata: { apiKey: secrets.RECAPTCHA_ENTERPRISE_API_KEY } }] } }, 403) : null });
+  const result = await f.run(), body = await result.text();
+  assert.equal(result.status, 503);
+  assert.ok(body.includes(code));
+  assert.equal(body.includes(secrets.RECAPTCHA_ENTERPRISE_API_KEY), false);
+  assert.equal(body.includes(credentials.captchaToken), false);
+  assert.deepEqual(f.diagnostics, [{ event: 'security_check_failed', code, upstreamStatus: 403 }]);
+  assert.equal(f.calls.some(call => call.url.pathname === '/auth/v1/token'), false);
+});
+
+test('a low score remains blocked and is distinguishable from a Google API configuration error', async () => {
+  const f = fixture({ riskAnalysis: { score: 0.1 } }), result = await f.run();
+  assert.equal(result.status, 403);
+  assert.match((await result.json()).error, /CAPTCHA_SCORE_LOW/);
+  assert.equal(f.calls.some(call => call.url.pathname === '/auth/v1/token'), false);
+});
+
+test('Google invalid-key responses without ErrorInfo remain actionable without echoing provider text', async () => {
+  const f = fixture({ intercept: call => call.url.hostname === 'recaptchaenterprise.googleapis.com'
+    ? json({ error: { status: 'INVALID_ARGUMENT', message: `API key not valid. ${secrets.RECAPTCHA_ENTERPRISE_API_KEY}` } }, 400) : null });
+  const result = await f.run(), body = await result.text();
+  assert.equal(result.status, 503);
+  assert.match(body, /CAPTCHA_API_KEY_INVALID/);
+  assert.equal(body.includes(secrets.RECAPTCHA_ENTERPRISE_API_KEY), false);
+  assert.deepEqual(f.diagnostics, [{ event: 'security_check_failed', code: 'CAPTCHA_API_KEY_INVALID', upstreamStatus: 400 }]);
+});
+
+test('Google referrer restrictions without ErrorInfo are identified as server API key restrictions', async () => {
+  const f = fixture({ intercept: call => call.url.hostname === 'recaptchaenterprise.googleapis.com'
+    ? json({ error: { status: 'PERMISSION_DENIED', message: 'Requests from this referer are blocked.' } }, 403) : null });
+  const result = await f.run();
+  assert.equal(result.status, 503);
+  assert.match((await result.json()).error, /CAPTCHA_API_KEY_RESTRICTED/);
+  assert.deepEqual(f.diagnostics, [{ event: 'security_check_failed', code: 'CAPTCHA_API_KEY_RESTRICTED', upstreamStatus: 403 }]);
+  assert.equal(f.calls.some(call => call.url.pathname === '/auth/v1/token'), false);
+});
+
+test('expired tokens and hostname mismatches provide bounded references without exposing token data', async () => {
+  for (const [options, code] of [
+    [{ tokenProperties: { valid: false, invalidReason: 'EXPIRED' } }, 'CAPTCHA_TOKEN_EXPIRED'],
+    [{ tokenProperties: { hostname: 'unregistered.example.test' } }, 'CAPTCHA_HOSTNAME_MISMATCH'],
+  ]) {
+    const f = fixture(options), result = await f.run();
+    assert.equal(result.status, 403);
+    assert.ok((await result.text()).includes(code));
+    assert.deepEqual(f.diagnostics, [{ event: 'security_check_failed', code }]);
   }
 });

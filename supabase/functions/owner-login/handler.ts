@@ -1,13 +1,17 @@
 import { archiveRecaptchaAction, archiveRecaptchaProjectId, archiveRecaptchaSiteKey } from "../_shared/recaptchaConfig.ts";
+import { captchaApiErrorCode, captchaFailureMessage, captchaTokenErrorCode } from "./captchaErrors.ts";
+
+type SecurityDiagnostic = { event: "security_check_failed"; code: string; upstreamStatus?: number };
 
 type Dependencies = {
   env: Record<string, string | undefined>;
   fetch?: typeof fetch;
   now?: () => number;
+  reportSecurityFailure?: (diagnostic: SecurityDiagnostic) => void;
 };
 
 type CaptchaAssessment = {
-  tokenProperties?: { valid?: boolean; action?: string; hostname?: string; createTime?: string };
+  tokenProperties?: { valid?: boolean; invalidReason?: string; action?: string; hostname?: string; createTime?: string };
   riskAnalysis?: { score?: number };
 };
 type LoginResult = {
@@ -23,7 +27,7 @@ const loginError = "Unable to sign in. Check your email and password.";
 const unavailableError = "Owner sign-in is temporarily unavailable. Please try again later.";
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
-export function createOwnerLoginHandler({ env, fetch: send = fetch, now = Date.now }: Dependencies) {
+export function createOwnerLoginHandler({ env, fetch: send = fetch, now = Date.now, reportSecurityFailure = diagnostic => console.error("[archive-login]", diagnostic) }: Dependencies) {
   const origins = (env.ARCHIVE_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);
   const hostnames = (env.RECAPTCHA_ALLOWED_HOSTNAMES || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
   const minimumScore = Number(env.RECAPTCHA_MIN_SCORE ?? "0.5");
@@ -125,7 +129,12 @@ export function createOwnerLoginHandler({ env, fetch: send = fetch, now = Date.n
         body: JSON.stringify({ event: { token: captchaToken, siteKey, expectedAction: archiveRecaptchaAction } }),
         signal: AbortSignal.timeout(10_000),
       });
-      if (!captchaResponse.ok) return respond(503, securityError);
+      if (!captchaResponse.ok) {
+        const body: unknown = await captchaResponse.json().catch(() => null);
+        const code = captchaApiErrorCode(captchaResponse.status, body);
+        reportSecurityFailure({ event: "security_check_failed", code, upstreamStatus: captchaResponse.status });
+        return respond(503, captchaFailureMessage(code));
+      }
       const assessment: CaptchaAssessment | null = await captchaResponse.json();
       const captcha = assessment?.tokenProperties;
       const score = assessment?.riskAnalysis?.score;
@@ -135,7 +144,14 @@ export function createOwnerLoginHandler({ env, fetch: send = fetch, now = Date.n
         || score < minimumScore || score > 1 || captcha.action !== archiveRecaptchaAction
         || !hostnames.includes((captcha.hostname || "").toLowerCase()) || !Number.isFinite(age) || age < -10_000 || age > 120_000) {
         await record("captcha_rejected", "blocked", "Sign-in blocked because the security check was not accepted.");
-        return respond(403, securityError);
+        const code = captcha?.valid !== true ? captchaTokenErrorCode(captcha?.valid, captcha?.invalidReason)
+          : captcha.action !== archiveRecaptchaAction ? "CAPTCHA_ACTION_MISMATCH"
+          : !hostnames.includes((captcha.hostname || "").toLowerCase()) ? "CAPTCHA_HOSTNAME_MISMATCH"
+          : !Number.isFinite(age) || age < -10_000 || age > 120_000 ? "CAPTCHA_TOKEN_EXPIRED"
+          : typeof score === "number" && Number.isFinite(score) && score >= 0 && score < minimumScore ? "CAPTCHA_SCORE_LOW"
+          : "CAPTCHA_REJECTED";
+        reportSecurityFailure({ event: "security_check_failed", code });
+        return respond(403, captchaFailureMessage(code));
       }
 
       // An invalid CAPTCHA cannot consume the owner's email-based allowance.
