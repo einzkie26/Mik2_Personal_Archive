@@ -10,12 +10,34 @@ export function authLog(event: string, details: Record<string, unknown> = {}) {
   console.info(`[archive-auth] ${event}`, { at: new Date().toISOString(), ...details });
 }
 
+export async function signInArchiveOwner(email: string, password: string, captchaToken: string) {
+  const { data, error } = await supabase.functions.invoke("owner-login", { body: { email, password, captchaToken }, timeout: 45_000 });
+  if (error) {
+    let message = "Owner sign-in is temporarily unavailable. Please try again later.";
+    if (error.context instanceof Response) {
+      const result = await error.context.json().catch(() => null);
+      if (typeof result?.error === "string") message = result.error;
+    }
+    throw new Error(message);
+  }
+  if (typeof data?.access_token !== "string" || typeof data?.refresh_token !== "string") throw new Error("Owner sign-in could not be completed. Please try again.");
+  const { data: signedIn, error: sessionError } = await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+  if (sessionError || !signedIn.session) throw new Error("Owner sign-in could not be completed. Please try again.");
+  return signedIn.session;
+}
+
 export async function archiveRequest(path: string, token?: string, body?: unknown) {
   if (path === "/owner") {
     if (!token) throw new Error("Please sign in to access Card Studio.");
-    const { data, error } = await supabase.auth.getUser(token);
-    const ownerFlag = data.user?.app_metadata?.archive_owner;
-    if (error || (ownerFlag !== true && ownerFlag !== "true")) throw new Error("This account does not have archive owner access.");
+    const response = await fetch(`https://${projectId}.supabase.co/rest/v1/rpc/archive_owner_has_access`, {
+      method: "POST",
+      headers: { apikey: publicAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(12_000),
+    });
+    const authorized = await response.json().catch(() => null);
+    if (response.status === 404) throw new Error("Owner security needs the latest archive database update.");
+    if (!response.ok || authorized !== true) throw new Error("Please sign in again as the archive owner to complete the security check.");
     return { owner: true };
   }
   const database = supabase;

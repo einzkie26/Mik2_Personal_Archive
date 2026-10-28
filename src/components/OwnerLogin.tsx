@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { supabase, archiveRequest, authLog } from "../lib/supabase";
+import { archiveRequest, authLog, signInArchiveOwner } from "../lib/supabase";
+import { executeLoginCaptcha, loadRecaptcha } from "../lib/recaptcha";
 import ArchiveDialog from "./ArchiveDialog";
 
 type Props = { open: boolean; onClose: () => void; onSuccess: () => void };
@@ -10,10 +11,14 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
 
   useEffect(() => {
     if (open) {
       setError("");
+      let cancelled = false;
+      void loadRecaptcha().catch(cause => { if (!cancelled) setError(cause.message); });
+      return () => { cancelled = true; };
     } else {
       setPassword("");
     }
@@ -21,19 +26,22 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
 
   const logIn = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
     setError("");
     try {
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (loginError || !data.session) throw new Error("Unable to sign in. Check your email and password.");
-      authLog("sign_in_succeeded", { userId: data.user?.id ?? null });
-      await archiveRequest("/owner", data.session.access_token);
+      const captchaToken = await executeLoginCaptcha();
+      const session = await signInArchiveOwner(email.trim(), password, captchaToken);
+      await archiveRequest("/owner", session.access_token);
+      authLog("sign_in_succeeded", { userId: session.user.id });
       setPassword("");
       onSuccess();
     } catch (loginError) {
       authLog("sign_in_failed", { error: loginError instanceof Error ? loginError.message : String(loginError) });
       setError(loginError instanceof Error ? loginError.message : "Unable to sign in. Please try again.");
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -43,11 +51,12 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
     <h2>Welcome back.</h2>
     <p className="owner-login-intro">Sign in as the archive owner to enter Card Studio.</p>
     <form onSubmit={logIn}>
-      <label>Email<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required autoFocus /></label>
-      <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+      <label>Email<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} disabled={loading} required autoFocus /></label>
+      <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={1024} disabled={loading} required /></label>
       {error && <p className="owner-login-error" role="alert">{error}</p>}
       <button className="owner-login-submit" disabled={loading}>{loading ? "Verifying access…" : "Sign in to Card Studio"}</button>
     </form>
+    <p className="owner-login-captcha-note">Protected by reCAPTCHA. Google’s <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> apply.</p>
     <p className="owner-login-note">Owner access only. The poetry archive remains open to everyone.</p>
   </ArchiveDialog>;
 }

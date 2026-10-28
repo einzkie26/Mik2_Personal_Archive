@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
+import ActivityLogs from "./components/ActivityLogs";
 import CollectionPicker from "./components/CollectionPicker";
 import FontPicker from "./components/FontPicker";
 import CardShadow from "./components/CardShadow";
@@ -111,6 +112,8 @@ export default function App() {
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
   const [passwordChangeDeferred, setPasswordChangeDeferred] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [activityLogsOpen, setActivityLogsOpen] = useState(false);
+  const authenticatedUserId = useRef<string | null>(null);
   const [accessStatus, setAccessStatus] = useState("");
   const studioRef = useRef<HTMLElement>(null);
   const [filter, setFilter] = useState("All");
@@ -229,8 +232,12 @@ export default function App() {
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       authLog("state_change", { event, hasSession: Boolean(nextSession), userId: nextSession?.user.id ?? null, expiresAt: nextSession?.expires_at ?? null });
-      if (event === "SIGNED_OUT") setSession(null);
-      else if (nextSession) setSession(nextSession);
+      if (!nextSession || nextSession.user.id !== authenticatedUserId.current) {
+        setIsOwner(false);
+        setActivityLogsOpen(false);
+      }
+      authenticatedUserId.current = nextSession?.user.id ?? null;
+      setSession(nextSession);
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -243,6 +250,7 @@ export default function App() {
     let cancelled = false;
     if (!session) {
       setIsOwner(false);
+      setActivityLogsOpen(false);
       setPasswordChangeOpen(false);
       setPasswordChangeDeferred(false);
       return;
@@ -256,10 +264,15 @@ export default function App() {
       }
     }).catch((error) => {
       authLog("owner_verification_failed", { userId: session.user.id, error: error instanceof Error ? error.message : String(error) });
-      if (!cancelled) setAccessStatus(error instanceof Error ? error.message : "Owner access could not be verified.");
+      if (!cancelled) {
+        setIsOwner(false);
+        setActivityLogsOpen(false);
+        setPasswordChangeOpen(false);
+        setAccessStatus(error instanceof Error ? error.message : "Owner access could not be verified.");
+      }
     });
     return () => { cancelled = true; };
-  }, [session?.user.id, passwordChangeDeferred]);
+  }, [session?.user.id, session?.access_token, passwordChangeDeferred]);
 
   useEffect(() => {
     let cancelled = false;
@@ -324,6 +337,11 @@ export default function App() {
   }, []);
 
   const logOut = async () => {
+    const { error: revokeError } = await supabase.rpc("archive_end_owner_session");
+    if (revokeError) authLog("owner_session_revoke_failed", { code: revokeError.code });
+    setActivityLogsOpen(false);
+    setIsOwner(false);
+    setPasswordChangeOpen(false);
     const { error } = await supabase.auth.signOut();
     if (error) { setAccessStatus("Unable to sign out. Please try again."); return; }
     setIsOwner(false);
@@ -724,12 +742,16 @@ export default function App() {
           {[{ id: "top", label: "Quiet hours", number: "01" }, { id: "poems", label: "The archive", number: "02" }, { id: "about", label: "The poet", number: "03" }, ...(isOwner ? [{ id: "studio", label: "Card studio", number: "04" }] : [])].map((section) => <a key={section.id} href={`#${section.id}`} className={selectedSection === section.id ? "is-selected" : ""} aria-current={selectedSection === section.id ? "location" : undefined} onClick={() => { setSelectedSection(section.id); setSidebarOpen(false); }}><span>{section.number}</span>{section.label}<span className="section-indicator">↗</span></a>)}
         </nav>
         <div className="sidebar-bottom">
+          {isOwner && session && <button type="button" className={`sidebar-activity-button ${activityLogsOpen ? "is-selected" : ""}`} aria-haspopup="dialog" aria-expanded={activityLogsOpen} onClick={() => { setActivityLogsOpen(true); setSidebarOpen(false); }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v15H4zM8 3v4m8-4v4M8 11h8M8 15h5" /></svg><span>Activity logs</span>
+          </button>}
           <p className="sidebar-label">Appearance</p>
           <div className="mode-selector" aria-label="Color mode">{(["light", "dark"] as const).map((mode) => <button key={mode} aria-pressed={colorMode === mode} className={colorMode === mode ? "is-selected" : ""} onClick={() => changeColorMode(mode)}><span aria-hidden="true">{mode === "light" ? "☀" : "☾"}</span>{mode === "light" ? "Light" : "Dark"}</button>)}</div>
           <p className="sidebar-footnote">A little space for<br />words worth keeping.</p>
         </div>
       </aside>
       <OwnerLogin open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => { setIsOwner(true); setLoginOpen(false); }} />
+      {isOwner && session && <ActivityLogs open={activityLogsOpen} token={session.access_token} onClose={() => setActivityLogsOpen(false)} />}
       <OwnerPasswordChange open={passwordChangeOpen} onComplete={() => setPasswordChangeOpen(false)} onLogout={() => void logOut()} onSkip={() => { setPasswordChangeDeferred(true); setPasswordChangeOpen(false); setIsOwner(true); }} />
       <section className="hero" id="top">
         <div className="hero-top">
