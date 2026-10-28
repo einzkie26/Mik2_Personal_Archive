@@ -56,7 +56,6 @@ export default function OwnerLogin({ open, onClose, onSuccess }: Props) {
       {error && <p className="owner-login-error" role="alert">{error}</p>}
       <button className="owner-login-submit" disabled={loading}>{loading ? "Verifying access…" : "Sign in to Card Studio"}</button>
     </form>
-    <p className="owner-login-captcha-note">Protected by reCAPTCHA. Google’s <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> apply.</p>
     <p className="owner-login-note">Owner access only. The poetry archive remains open to everyone.</p>
   </ArchiveDialog>;
 }

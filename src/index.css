@@ -559,8 +559,6 @@ button:hover, a:hover { opacity: .8; }
 .owner-password-actions button:hover { color: var(--archive-accent); }
 .owner-login-error { margin: 0; color: var(--archive-accent); font-size: 13px; line-height: 1.6; }
 .owner-login-note { font-size: 11px; color: var(--archive-muted); line-height: 1.6; margin: 24px 0 0; }
-.owner-login-captcha-note { margin: 20px 0 0; color: var(--archive-muted); font-size: 10px; line-height: 1.7; }
-.owner-login-captcha-note a { color: inherit; text-underline-offset: 2px; }
 .sidebar-activity-button { display: flex; align-items: center; gap: 11px; width: 100%; margin-top: 30px; padding: 13px 10px; border: 1px solid var(--archive-rule); border-radius: 8px; background: transparent; color: var(--archive-muted); font-size: 12px; text-align: left; }
 .sidebar-activity-button:hover, .sidebar-activity-button.is-selected { background: var(--archive-paper); color: var(--archive-ink); border-color: var(--archive-accent); }
 .sidebar-activity-button svg { width: 17px; height: 17px; flex-shrink: 0; }
