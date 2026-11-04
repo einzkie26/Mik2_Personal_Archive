@@ -1,8 +1,8 @@
-import type { CSSProperties } from "react";
 import type { ArchiveEntry } from "../lib/archiveTypes";
 import { getCardFont } from "../lib/cardFonts";
 import { getPoemTextSize } from "../lib/poemTextSize";
 import CardShadow from "./CardShadow";
+import CardBackgroundImage from "./CardBackgroundImage";
 
 type Props = {
   entry: ArchiveEntry;
@@ -26,9 +26,8 @@ export default function ArchiveCard({ entry, isOwner, liked = false, deleting = 
     <div className={`quote-panel ${entry.tone}${entry.image_url ? " has-card-image" : ""}`} style={{
       backgroundColor: entry.theme_background,
       color: entry.theme_ink,
-      "--quote-image-color": entry.theme_background,
-      "--quote-image": entry.image_url ? `url(${JSON.stringify(entry.image_url)})` : undefined,
-    } as CSSProperties}>
+    }}>
+      <CardBackgroundImage source={entry.image_url} />
       <span aria-hidden="true">“</span>
       <CardShadow value={entry.shadow_overlay} />
       <blockquote style={{ fontFamily: font.family, fontSize: `${25 * scale}px`, color: entry.theme_ink }}>{entry.excerpt}</blockquote>

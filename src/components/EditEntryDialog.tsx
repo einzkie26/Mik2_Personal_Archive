@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import ArchiveDialog from "./ArchiveDialog";
 import CollectionPicker from "./CollectionPicker";
 import FontPicker from "./FontPicker";
@@ -7,6 +6,7 @@ import PoemSizeControl from "./PoemSizeControl";
 import CardShadow from "./CardShadow";
 import ShadowPicker from "./ShadowPicker";
 import CardImageControls from "./CardImageControls";
+import CardBackgroundImage from "./CardBackgroundImage";
 import TextStatistics from "./TextStatistics";
 import CardImageEditor, { type ImageEditRequest } from "./CardImageEditor";
 import type { ArchiveEntry, EntryCategory } from "../lib/archiveTypes";
@@ -159,9 +159,7 @@ export default function EditEntryDialog({ entry, collections, emptyCollections, 
           })}</div>
           <div className={`edit-style-preview${draft.image ? " has-card-image" : ""}`} style={{
             backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent, fontFamily: font.family,
-            "--quote-image-color": theme.background,
-            "--quote-image": draft.image ? `url(${JSON.stringify(draft.image)})` : undefined,
-          } as CSSProperties}><CardShadow value={draft.shadow} /><strong>{draft.title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{draft.body || "Your words will appear here."}</p></div>
+          }}><CardBackgroundImage source={draft.image} /><CardShadow value={draft.shadow} /><strong>{draft.title || "Untitled"}</strong><p style={{ fontSize: `${20 * poemScale}px` }}>{draft.body || "Your words will appear here."}</p></div>
         </div>
         <ShadowPicker value={draft.shadow} onChange={value => update("shadow", value)} />
       </fieldset>

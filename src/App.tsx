@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
@@ -14,6 +13,7 @@ import CardShadow from "./components/CardShadow";
 import ShadowPicker from "./components/ShadowPicker";
 import PoemSizeControl from "./components/PoemSizeControl";
 import CardImageControls from "./components/CardImageControls";
+import CardBackgroundImage from "./components/CardBackgroundImage";
 import TextStatistics from "./components/TextStatistics";
 import EditEntryDialog from "./components/EditEntryDialog";
 import type { ArchiveEntry, ArchiveProfile, EntryCategory } from "./lib/archiveTypes";
@@ -170,6 +170,7 @@ export default function App() {
   const [cardImage, setCardImage] = useState("");
   const [imageEdit, setImageEdit] = useState<ImageEditRequest | null>(null);
   const originalImage = useRef<{ source: string; crop: ImageCrop; result: string } | null>(null);
+  const pendingDraftImageNumber = useRef<string | null>(null);
   const openImageEditor = (source = cardImage) => {
     if (!source) return;
     const cached = originalImage.current;
@@ -180,7 +181,7 @@ export default function App() {
     disabled: submitting,
     onChoose: openImageEditor,
     onEdit: () => openImageEditor(),
-    onRemove: () => { setCardImage(""); originalImage.current = null; },
+    onRemove: () => { setCardImage(""); originalImage.current = null; pendingDraftImageNumber.current = null; },
   };
   const [likeVoterId] = useState(getLikeVoterId);
   const [likedNumbers, setLikedNumbers] = useState<string[]>(() => {
@@ -497,6 +498,9 @@ export default function App() {
       setFontFamily(getCardFont(parsed.fontFamily).id);
       setShadowOverlay(getCardShadow(parsed.shadowOverlay).id);
       setPoemTextSize(getPoemTextSize(parsed.poemTextSize));
+      setCardImage(typeof parsed.cardImage === "string" ? parsed.cardImage : "");
+      pendingDraftImageNumber.current = typeof parsed.savedEntryNumber === "string" ? parsed.savedEntryNumber : null;
+      if (typeof parsed.isPublic === "boolean") setIsPublic(parsed.isPublic);
       if (["Poem", "Prose", "Note"].includes(parsed.category)) setCategory(parsed.category);
       if (typeof parsed.collection === "string") setCollection(parsed.collection.trim() || "Personal collection");
       setCreatingCollection(false);
@@ -506,6 +510,14 @@ export default function App() {
     // The starter poem is intentionally used only when no saved draft exists.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner]);
+
+  useEffect(() => {
+    if (!isOwner || !pendingDraftImageNumber.current) return;
+    const saved = archiveEntries.find(entry => entry.number === pendingDraftImageNumber.current);
+    if (!saved) return;
+    pendingDraftImageNumber.current = null;
+    setCardImage(current => current || saved.image_url || "");
+  }, [isOwner, archiveEntries]);
 
   const createCard = async (entry?: ArchiveEntry, format: "post" | "story" = "post", signal?: AbortSignal) => {
     const cardFont = getCardFont(entry ? entry.font_family : fontFamily);
@@ -642,7 +654,8 @@ export default function App() {
       setSubmitting(false);
       return;
     }
-    try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
+    // Keep large images in the saved entry instead of exceeding localStorage's quota.
+    try { localStorage.setItem("verse-poem-draft", JSON.stringify({ ...cardDraft, cardImage: undefined, savedEntryNumber: entry.number })); } catch {}
     setFilter("All");
     setQuery("");
     setCollectionFilter("");
@@ -864,9 +877,8 @@ export default function App() {
           backgroundColor: reading?.theme_background,
           color: reading?.theme_ink,
           borderColor: reading?.theme_accent,
-          "--quote-image-color": reading?.theme_background || "var(--archive-paper)",
-          "--quote-image": reading?.image_url ? `url(${JSON.stringify(reading.image_url)})` : undefined,
-        } as CSSProperties}>
+        }}>
+          <CardBackgroundImage source={reading?.image_url} />
           <CardShadow value={reading?.shadow_overlay} />
           <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family, fontSize: `${25 * getPoemTextSize(reading?.poem_text_size) / 100}px` }}>{reading?.excerpt}</p>
         </div>
@@ -918,7 +930,7 @@ export default function App() {
         <div className="studio-preview-panel">
           <div className="studio-panel-heading"><span className="studio-step">02</span><h3>Set the mood</h3><span className="preview-size">1080 × 1080</span></div>
           <div className="card-preview" style={{ backgroundColor: theme.background, color: theme.ink, borderColor: theme.accent }}>
-            {cardImage && <img className="card-preview-image" src={cardImage} alt="" />}
+            <CardBackgroundImage source={cardImage} className="card-preview-image" />
             <CardShadow value={shadowOverlay} />
             <div className="preview-inner" style={{ borderColor: theme.accent }}>
               <span style={{ color: theme.accent }}>A {category.toUpperCase()} BY</span>
@@ -950,6 +962,7 @@ export default function App() {
         <div className="delete-modal-actions"><button className="delete-cancel-button" onClick={() => setDeleteCandidate(null)}>Keep piece</button><button className="delete-confirm-button" onClick={() => { if (!deleteCandidate) return; const entry = deleteCandidate; setDeleteCandidate(null); void removeArchiveEntry(entry); }}>Delete permanently</button></div>
       </ArchiveDialog>
       <CardImageEditor image={imageEdit} background={theme.background} onClose={() => setImageEdit(null)} onApply={(source, crop, result) => {
+        pendingDraftImageNumber.current = null;
         originalImage.current = { source, crop, result };
         setCardImage(result);
         setImageEdit(null);
