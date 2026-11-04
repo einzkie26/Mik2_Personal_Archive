@@ -7,6 +7,7 @@ import PoemSizeControl from "./PoemSizeControl";
 import CardShadow from "./CardShadow";
 import ShadowPicker from "./ShadowPicker";
 import CardImageControls from "./CardImageControls";
+import TextStatistics from "./TextStatistics";
 import CardImageEditor, { type ImageEditRequest } from "./CardImageEditor";
 import type { ArchiveEntry, EntryCategory } from "../lib/archiveTypes";
 import { cardThemes, type Theme } from "../lib/cardThemes";
@@ -138,7 +139,10 @@ export default function EditEntryDialog({ entry, collections, emptyCollections, 
           }} onDelete={!creatingCollection && emptyCollections.includes(draft.collection) ? () => void removeCollection() : undefined} deleting={deletingCollection} disabled={saving} status={collectionStatus} />
           <label>Title<input value={draft.title} onChange={event => update("title", event.target.value)} maxLength={48} /></label>
           <label>Author<input value={draft.author} onChange={event => update("author", event.target.value)} maxLength={40} /></label>
-          <label className="edit-modal-wide">Text<textarea value={draft.body} onChange={event => update("body", event.target.value)} maxLength={360} rows={6} style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /></label>
+          <div className="edit-modal-wide">
+            <label>Text<textarea value={draft.body} onChange={event => update("body", event.target.value)} rows={6} aria-describedby="edit-text-statistics" style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /></label>
+            <TextStatistics text={draft.body} id="edit-text-statistics" />
+          </div>
           <FontPicker value={draft.fontFamily} onChange={value => update("fontFamily", value)} />
           <label>Visibility<select value={draft.isPublic ? "public" : "hidden"} onChange={event => update("isPublic", event.target.value === "public")}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
           <div className="edit-modal-wide"><PoemSizeControl value={draft.textSize} onChange={value => update("textSize", value)} /></div>

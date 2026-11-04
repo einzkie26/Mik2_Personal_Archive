@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { prepareCardImage } from "../lib/cardImageUpload";
 
 type Props = {
   value: string;
@@ -15,21 +16,14 @@ export default function CardImageControls({ value, disabled, onChoose, onEdit, o
   const chooseFile = async (file?: File) => {
     if (!file) return;
     setError("");
-    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
-      setError("Choose a PNG, JPG, WebP or GIF image.");
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      setError("Choose an image smaller than 20 MB.");
-      return;
-    }
     setLoading(true);
     try {
+      const image = await prepareCardImage(file);
       const source = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
         reader.onerror = () => reject(new Error("The image could not be read. Please try another file."));
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(image);
       });
       onChoose(source);
     } catch (reason) {
@@ -40,7 +34,7 @@ export default function CardImageControls({ value, disabled, onChoose, onEdit, o
   };
   return <div className="card-image-controls">
     <p className="card-image-label">Background image</p>
-    <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={disabled || loading} hidden aria-label="Choose background image" onChange={event => {
+    <input ref={inputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" disabled={disabled || loading} hidden aria-label="Choose background image" onChange={event => {
       const file = event.target.files?.[0];
       event.target.value = "";
       void chooseFile(file);

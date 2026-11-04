@@ -11,6 +11,7 @@ import CardShadow from "./components/CardShadow";
 import ShadowPicker from "./components/ShadowPicker";
 import PoemSizeControl from "./components/PoemSizeControl";
 import CardImageControls from "./components/CardImageControls";
+import TextStatistics from "./components/TextStatistics";
 import EditEntryDialog from "./components/EditEntryDialog";
 import type { ArchiveEntry, EntryCategory } from "./lib/archiveTypes";
 import { cardThemes as themes } from "./lib/cardThemes";
@@ -139,8 +140,8 @@ export default function App() {
   const [archiveLoading, setArchiveLoading] = useState(true);
   const [loadingScreenVisible, setLoadingScreenVisible] = useState(true);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
-  const [shareStatus, setShareStatus] = useState("");
-  const [sharing, setSharing] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [deletingNumber, setDeletingNumber] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<ArchiveEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<ArchiveEntry | null>(null);
@@ -163,12 +164,11 @@ export default function App() {
   };
   const imageControls = {
     value: cardImage,
-    disabled: sharing,
+    disabled: submitting,
     onChoose: openImageEditor,
     onEdit: () => openImageEditor(),
     onRemove: () => { setCardImage(""); originalImage.current = null; },
   };
-  const [preparedCard, setPreparedCard] = useState<{ file: File; draft: CardDraft } | null>(null);
   const [likeVoterId] = useState(getLikeVoterId);
   const [likedNumbers, setLikedNumbers] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("marginalia-liked-entries") || "[]") as string[]; } catch { return []; }
@@ -202,8 +202,8 @@ export default function App() {
     setCreatingCollection(creatingNew);
     setCollectionStatus("");
   };
-  // Compare draft references without copying a potentially large image data URL.
-  const cardDraft = useMemo(
+  // Keep the complete draft ready to persist after a successful submission.
+  const cardDraft = useMemo<CardDraft>(
     () => ({ author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage }),
     [author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage],
   );
@@ -543,27 +543,8 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!isOwner) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      createCard(undefined, "post", controller.signal).then((blob) => {
-        if (controller.signal.aborted || !blob) return;
-        const filename = (title || category).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-        setPreparedCard({ file: new File([blob], `${filename}.png`, { type: "image/png" }), draft: cardDraft });
-      }).catch(() => {
-        if (!controller.signal.aborted) setShareStatus("The image could not be prepared. Please edit your piece and try again.");
-      });
-    }, 300);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [cardDraft, isOwner]);
-
-  const sharePoem = async () => {
-    if (!isOwner || !session || sharing || deletingCollection || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft) return;
-    const file = preparedCard.file;
+  const submitPoem = async () => {
+    if (!isOwner || !session || submitting || deletingCollection || !body.trim() || !collectionValid || imageEdit) return;
     const entry: ArchiveEntry = {
       number: crypto.randomUUID(),
       title: title.trim() || "Untitled",
@@ -583,9 +564,8 @@ export default function App() {
       date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
     };
-    setSharing(true);
-    const instagramWindow = window.open("", "_blank");
-    if (instagramWindow) instagramWindow.opener = null;
+    setSubmitting(true);
+    setSubmitStatus("");
     try {
       const { data } = await supabase.auth.getSession();
       if (!data.session) throw new Error("Please sign in again to publish your piece.");
@@ -596,30 +576,16 @@ export default function App() {
       setCreatingCollection(false);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
-      instagramWindow?.close();
-      setShareStatus(error instanceof Error ? error.message : "The archive could not be saved. Please try again.");
-      setSharing(false);
+      setSubmitStatus(error instanceof Error ? error.message : "The archive could not be saved. Please try again.");
+      setSubmitting(false);
       return;
     }
     try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
     setFilter("All");
     setQuery("");
     setEntryPeriod("latest");
-    if (instagramWindow) {
-      instagramWindow.location.replace("https://www.instagram.com/");
-    }
-    const link = document.createElement("a");
-    const imageUrl = URL.createObjectURL(file);
-    link.download = file.name;
-    link.href = imageUrl;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(imageUrl), 60000);
-    setShareStatus(instagramWindow
-      ? "Saved to your archive and image download started. Instagram is open in a new tab. Create a post and choose your downloaded image."
-      : "Saved to your archive and image download started. Your browser blocked the Instagram tab. Use Open Instagram below, then create a post with your downloaded image.");
-    setSharing(false);
+    setSubmitStatus("Submitted to your archive.");
+    setSubmitting(false);
   };
 
   const saveEditedEntry = async (entry: ArchiveEntry) => {
@@ -644,7 +610,7 @@ export default function App() {
   };
 
   const removeEmptyCollection = async () => {
-    if (!session || !isOwner || !canDeleteCollection || deletingCollection || sharing) return;
+    if (!session || !isOwner || !canDeleteCollection || deletingCollection || submitting) return;
     const name = collection;
     setDeletingCollection(name);
     setCollectionStatus("");
@@ -693,14 +659,14 @@ export default function App() {
   const removeArchiveEntry = async (entry: ArchiveEntry) => {
     if (!session || deletingNumber) return;
     setDeletingNumber(entry.number);
-    setShareStatus("");
+    setSubmitStatus("");
     try {
       await deleteArchiveEntry(entry.number, session.access_token);
       setArchiveEntries((current) => current.filter((item) => item.number !== entry.number));
       setEditingEntry(current => current?.number === entry.number ? null : current);
       window.dispatchEvent(new Event("archive-published"));
     } catch (error) {
-      setShareStatus(error instanceof Error ? error.message : "The entry could not be deleted. Please try again.");
+      setSubmitStatus(error instanceof Error ? error.message : "The entry could not be deleted. Please try again.");
     } finally {
       setDeletingNumber(null);
     }
@@ -797,7 +763,7 @@ export default function App() {
         {archiveError && <p className="archive-share-status" role="alert">{archiveError}</p>}
         {archiveLoading && <p className="empty-archive" role="status">Gathering the latest entries…</p>}
         {!archiveLoading && !archiveError && entries.length === 0 && <p className="empty-archive">The archive is quiet for now. New pieces will appear here when published.</p>}
-        {shareStatus && <div className="archive-share-status"><p role="status">{shareStatus}</p><a className="instagram-open-link" href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">Open Instagram ↗</a></div>}
+        {submitStatus && <div className="archive-share-status"><p role="status">{submitStatus}</p></div>}
         {searchOpen && <input className="archive-search" aria-label="Search entries" placeholder="Find a title or a line…" value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />}
         <div className="poem-grid">
           {visibleEntries.map((poem) => (
@@ -900,7 +866,7 @@ export default function App() {
             <legend>What are you writing?</legend>
             <div className="entry-type-options">{(["Poem", "Prose", "Note"] as const).map((option) => <button key={option} aria-pressed={category === option} className={category === option ? "selected" : ""} onClick={() => setCategory(option)}>{option}</button>)}</div>
           </fieldset>
-          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={sharing} status={collectionStatus} />
+          <CollectionPicker names={savedCollectionNames} value={collection} creatingNew={creatingCollection} onChange={updateCollection} autoFocusNew onDelete={canDeleteCollection ? () => void removeEmptyCollection() : undefined} deleting={deletingCollection !== null} disabled={submitting} status={collectionStatus} />
           <label>Archive visibility<select value={isPublic ? "public" : "hidden"} onChange={(event) => setIsPublic(event.target.value === "public")}><option value="public">Public — visible in the archive</option><option value="hidden">Hidden — owner only</option></select></label>
           <div className="studio-fields">
             <label>Your name<input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={40} /></label>
@@ -908,7 +874,10 @@ export default function App() {
           </div>
           <FontPicker value={fontFamily} onChange={setFontFamily} />
           <PoemSizeControl value={poemTextSize} onChange={setPoemTextSize} />
-          <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={360} rows={9} style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /><span>{body.length} / 360 characters</span></label>
+          <div className="studio-body-field">
+            <label className="studio-body-label">Your {category.toLowerCase()}<textarea value={body} onChange={(event) => setBody(event.target.value)} rows={9} aria-describedby="studio-text-statistics" style={{ fontFamily: font.family, fontSize: `${Math.max(16, 21 * poemScale)}px` }} /></label>
+            <TextStatistics text={body} id="studio-text-statistics" />
+          </div>
         </div>
         <div className="studio-preview-panel">
           <div className="studio-panel-heading"><span className="studio-step">02</span><h3>Set the mood</h3><span className="preview-size">1080 × 1080</span></div>
@@ -930,10 +899,9 @@ export default function App() {
           </fieldset>
           <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
           <div className="studio-share-area">
-            <button className="share-button" onClick={() => void sharePoem()} disabled={sharing || deletingCollection !== null || !body.trim() || !collectionValid || preparedCard?.draft !== cardDraft}><InstagramIcon />{sharing ? "Sharing…" : "Share to Instagram"}<ArrowIcon /></button>
-            <p>Sharing saves to your archive and downloads an image.</p>
-            <small>Opens Instagram in a new tab. Create a post and select the downloaded image.</small>
-            {shareStatus && <p className="studio-share-feedback" role="status">{shareStatus}</p>}
+            <button className="share-button" onClick={() => void submitPoem()} disabled={submitting || deletingCollection !== null || !body.trim() || !collectionValid || imageEdit !== null}>{submitting ? "Submitting…" : "Submit"}<ArrowIcon /></button>
+            <p>Saves this piece to your archive.</p>
+            {submitStatus && <p className="studio-share-feedback" role="status">{submitStatus}</p>}
           </div>
         </div>
         <section className="archive-settings-card" aria-labelledby="archive-settings-heading">
