@@ -4,6 +4,8 @@ import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
+import ArchiveSettingsDialog from "./components/ArchiveSettingsDialog";
+import PoetSection from "./components/PoetSection";
 import ActivityLogs from "./components/ActivityLogs";
 import CollectionPicker from "./components/CollectionPicker";
 import FontPicker from "./components/FontPicker";
@@ -13,7 +15,7 @@ import PoemSizeControl from "./components/PoemSizeControl";
 import CardImageControls from "./components/CardImageControls";
 import TextStatistics from "./components/TextStatistics";
 import EditEntryDialog from "./components/EditEntryDialog";
-import type { ArchiveEntry, EntryCategory } from "./lib/archiveTypes";
+import type { ArchiveEntry, ArchiveProfile, EntryCategory } from "./lib/archiveTypes";
 import { cardThemes as themes } from "./lib/cardThemes";
 import CardImageEditor, { type ImageEditRequest } from "./components/CardImageEditor";
 import type { ImageCrop } from "./lib/imageCrop";
@@ -152,7 +154,7 @@ export default function App() {
   const [poetTextSize, setPoetTextSize] = useState(100);
   const [poetTextColor, setPoetTextColor] = useState("#28261f");
   const [archiveVolume, setArchiveVolume] = useState("1");
-  const [profileSaving, setProfileSaving] = useState(false);
+  const [archiveSettingsOpen, setArchiveSettingsOpen] = useState(false);
   const [profileStatus, setProfileStatus] = useState("");
   const [cardImage, setCardImage] = useState("");
   const [imageEdit, setImageEdit] = useState<ImageEditRequest | null>(null);
@@ -191,10 +193,10 @@ export default function App() {
   const poemScale = poemTextSize / 100;
   const font = getCardFont(fontFamily);
   const theme = themes[activeTheme];
-  const poetScale = poetTextSize / 100;
   const volumeNumber = Number(archiveVolume);
   const volumeValid = Number.isInteger(volumeNumber) && volumeNumber >= 1 && volumeNumber <= 9999;
   const volumeLabel = volumeValid ? volumeNumber : 1;
+  const poetProfile: ArchiveProfile = { poet_name: poetName, quote: poetQuote, bio: poetBio, text_size: poetTextSize, text_color: poetTextColor, volume: volumeLabel };
   const collectionValid = Boolean(collection.trim());
   const canDeleteCollection = !creatingCollection && !archiveLoading && !archiveError && savedCollectionNames.includes(collection) && !entries.some((entry) => entry.collection === collection);
   const updateCollection = (name: string, creatingNew: boolean) => {
@@ -245,6 +247,10 @@ export default function App() {
   useEffect(() => {
     if (!archiveLoading) setLoadingScreenVisible(false);
   }, [archiveLoading]);
+
+  useEffect(() => {
+    if (!isOwner) setArchiveSettingsOpen(false);
+  }, [isOwner]);
 
   useEffect(() => {
     let cancelled = false;
@@ -387,7 +393,7 @@ export default function App() {
 
   useEffect(() => {
     if (usesStableRendering || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const elements = document.querySelectorAll(".section-heading, .poem-card, .about > *, .studio-heading, .editor, .card-preview");
+    const elements = document.querySelectorAll(".section-heading, .poem-card, #about > :not(.poet-settings-toggle), .studio-heading, .editor, .card-preview");
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
@@ -627,33 +633,21 @@ export default function App() {
     }
   };
 
-  const savePoetProfile = async () => {
-    if (!session || profileSaving) return;
-    if (!volumeValid) {
-      setProfileStatus("Volume must be a whole number from 1 to 9999.");
-      return;
-    }
-    setProfileSaving(true);
-    setProfileStatus("");
-    try {
-      const profile = await archiveRequest("/profile", session.access_token, {
-        poet_name: poetName.trim() || "Mikhai",
-        quote: poetQuote.trim() || "I write to notice what would otherwise pass me by.",
-        bio: poetBio.trim() || "I’m Mikhai, a poet and observer of ordinary wonders. My work lives somewhere between memory and morning light.",
-        text_size: poetTextSize,
-        text_color: poetTextColor,
-        volume: volumeNumber,
-      });
-      setPoetName(profile.poet_name);
-      setPoetQuote(profile.quote);
-      setPoetBio(profile.bio);
-      setArchiveVolume(String(profile.volume ?? volumeNumber));
-      setProfileStatus("Archive settings saved.");
-    } catch (error) {
-      setProfileStatus(error instanceof Error ? error.message : "The poet profile could not be saved.");
-    } finally {
-      setProfileSaving(false);
-    }
+  const savePoetProfile = async (draft: ArchiveProfile) => {
+    if (!session || !isOwner) throw new Error("Please sign in again to save your archive settings.");
+    const profile = await archiveRequest("/profile", session.access_token, {
+      ...draft,
+      poet_name: draft.poet_name.trim() || "Mikhai",
+      quote: draft.quote.trim() || "I write to notice what would otherwise pass me by.",
+      bio: draft.bio.trim() || "I’m Mikhai, a poet and observer of ordinary wonders. My work lives somewhere between memory and morning light.",
+    });
+    setPoetName(profile.poet_name);
+    setPoetQuote(profile.quote);
+    setPoetBio(profile.bio);
+    setPoetTextSize(profile.text_size);
+    setPoetTextColor(profile.text_color);
+    setArchiveVolume(String(profile.volume ?? draft.volume));
+    setProfileStatus("Archive settings saved.");
   };
 
   const removeArchiveEntry = async (entry: ArchiveEntry) => {
@@ -843,16 +837,11 @@ export default function App() {
         </div>
       </ArchiveDialog>
 
-      <section className="about" id="about">
-        <div className="about-mark" aria-hidden="true">“</div>
-        <blockquote style={{ color: poetTextColor.toLowerCase() === "#28261f" ? "var(--archive-ink)" : poetTextColor, fontSize: `clamp(${2.5 * poetScale}rem, ${4 * poetScale}vw, ${4.5 * poetScale}rem)` }}>
-          {poetQuote}
-        </blockquote>
-        <div className="about-copy">
-          <p className="eyebrow">The poet</p>
-          <p>{poetBio.replace("Mikhai", poetName)}</p>
-        </div>
-      </section>
+      <PoetSection profile={poetProfile} settingsOpen={archiveSettingsOpen} status={isOwner ? profileStatus : undefined} onOpenSettings={isOwner ? () => {
+        setProfileStatus("");
+        setArchiveSettingsOpen(true);
+      } : undefined} />
+      {isOwner && archiveSettingsOpen && <ArchiveSettingsDialog profile={poetProfile} onClose={() => setArchiveSettingsOpen(false)} onSave={savePoetProfile} />}
 
       {isOwner && <section className="studio" id="studio" ref={studioRef}>
         <div className="studio-heading">
@@ -904,19 +893,6 @@ export default function App() {
             {submitStatus && <p className="studio-share-feedback" role="status">{submitStatus}</p>}
           </div>
         </div>
-        <section className="archive-settings-card" aria-labelledby="archive-settings-heading">
-          <div className="studio-panel-heading"><span className="studio-step">03</span><h3 id="archive-settings-heading">Archive settings</h3></div>
-          <p className="archive-settings-intro">Manage your archive details and poet profile.</p>
-          <div className="archive-settings-fields">
-            <div className="archive-setting-field"><label>Archive volume<input type="number" min="1" max="9999" step="1" inputMode="numeric" value={archiveVolume} onChange={(event) => setArchiveVolume(event.target.value)} aria-invalid={!volumeValid} aria-describedby="archive-volume-help" /></label><small id="archive-volume-help">Shown as “Personal archive · VOL {volumeLabel}” in Quiet hours.</small></div>
-            <label>Poet name<input value={poetName} onChange={(event) => setPoetName(event.target.value)} maxLength={40} /></label>
-            <label>Poet quote<textarea value={poetQuote} onChange={(event) => setPoetQuote(event.target.value)} maxLength={180} rows={4} /></label>
-            <label>Poet biography<textarea value={poetBio} onChange={(event) => setPoetBio(event.target.value)} maxLength={360} rows={4} /></label>
-            <div className="profile-controls"><label>Poet quote size<input type="range" min="70" max="150" value={poetTextSize} onChange={(event) => setPoetTextSize(Number(event.target.value))} aria-valuetext={`${poetTextSize} percent`} /><span aria-hidden="true">{poetTextSize}%</span></label><label>Quote color<input type="color" value={poetTextColor} onChange={(event) => setPoetTextColor(event.target.value)} /></label></div>
-          </div>
-          <button className="profile-save-button" onClick={() => void savePoetProfile()} disabled={profileSaving || !volumeValid}>{profileSaving ? "Saving…" : "Save archive settings"}</button>
-          {profileStatus && <p className="studio-share-feedback" role="status">{profileStatus}</p>}
-        </section>
       </section>}
 
       <ArchiveDialog open={deleteCandidate !== null} onClose={() => setDeleteCandidate(null)} closeLabel="Close delete confirmation" ariaLabel="Delete this piece?" className="delete-modal">

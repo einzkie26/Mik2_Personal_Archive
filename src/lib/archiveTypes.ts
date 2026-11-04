@@ -1,4 +1,13 @@
 export type EntryCategory = "Poem" | "Prose" | "Note";
+export type ArchiveProfile = {
+  poet_name: string;
+  quote: string;
+  bio: string;
+  text_size: number;
+  text_color: string;
+  volume: number;
+};
+
 export type ArchiveEntry = {
   number: string;
   title: string;

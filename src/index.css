@@ -193,6 +193,7 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .poem-card button { color: #f5eddf; margin-top: auto; align-self: flex-start; }
 
 .about {
+  position: relative;
   padding: 8rem 10vw;
   display: grid;
   grid-template-columns: 100px 1fr .5fr;
@@ -202,6 +203,10 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .about-mark { font-family: "Fraunces", serif; color: #b64d36; font-size: 8rem; line-height: .4; }
 .about blockquote { margin: 0; max-width: 700px; font-size: clamp(2.5rem, 4vw, 4.5rem); line-height: 1.12; letter-spacing: -.04em; }
 .about-copy > p:last-child { font-family: "Fraunces", serif; line-height: 1.7; }
+.poet-settings-toggle { position: absolute; top: 24px; right: 24px; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--archive-rule); border-radius: 50%; background: var(--archive-paper); color: var(--archive-muted); }
+.poet-settings-toggle svg { width: 22px; height: 22px; }
+.poet-settings-toggle:hover, .poet-settings-toggle[aria-expanded="true"] { border-color: var(--archive-accent); color: var(--archive-accent); }
+.poet-profile-status { position: absolute; bottom: 22px; left: 7%; margin: 0; color: var(--archive-muted); font: 400 12px/1.6 "DM Sans", sans-serif; }
 
 .studio {
   background: #d9cbb7;
@@ -963,4 +968,57 @@ html[data-rendering-mode="stable"]::view-transition-new(root) { animation: none;
     transition: none;
   }
   html[data-rendering-mode="stable"] .portfolio-sidebar.is-open { display: flex; }
+}
+
+/* Keep the settings at the left and the complete poet preview in view. */
+.poem-reader.archive-dialog.poet-settings-modal {
+  width: min(1360px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(var(--dialog-viewport-height, 100dvh) - 32px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.poet-settings-modal::backdrop { background: #1d201bbb; }
+.poet-settings-modal .archive-dialog-content { padding: 8px; }
+.poet-settings-layout { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: clamp(24px, 3vw, 44px); align-items: center; }
+.poet-settings-form { display: flex; flex-direction: column; grid-column: auto; max-height: calc(var(--dialog-viewport-height, 100dvh) - 48px); padding: 24px; border-color: var(--archive-rule); background: var(--archive-paper); }
+.poet-settings-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-shrink: 0; }
+.poet-settings-heading .eyebrow { margin: 0; }
+.poet-settings-close { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border: 1px solid var(--archive-rule); border-radius: 50%; background: transparent; color: var(--archive-muted); font-size: 26px; line-height: 1; }
+.poet-settings-form h2 { flex-shrink: 0; margin: 14px 0 0; font-size: 38px; }
+.poet-settings-form h2 em { color: var(--archive-accent); }
+.poet-settings-form .archive-settings-intro { flex-shrink: 0; margin: 12px 0 20px; font-size: 12px; }
+.poet-settings-fields { flex: 1 1 auto; min-height: 0; min-width: 0; margin: 0 -8px; padding: 0 8px 8px; overflow-y: auto; overscroll-behavior-y: contain; }
+.poet-settings-fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.poet-settings-form .archive-settings-fields { grid-template-columns: 1fr; gap: 20px; margin: 0; }
+.poet-settings-form textarea { min-height: 100px; }
+.poet-settings-form .profile-controls { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
+.poet-settings-form .profile-controls input[type="color"] { width: 64px; }
+.poet-settings-form .profile-controls output { align-self: flex-end; color: var(--archive-muted); font-size: 11px; letter-spacing: 0; }
+.poet-settings-footer { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--archive-rule); }
+.poet-settings-cancel { min-height: 44px; border: 1px solid var(--archive-rule); border-radius: 10px; padding: 12px 18px; background: transparent; color: var(--archive-ink); font-size: 12px; }
+.poet-settings-form .profile-save-button { flex: 1; min-width: 0; min-height: 44px; width: auto; }
+.poet-settings-form button:disabled { opacity: .5; cursor: wait; }
+.poet-settings-error { flex-shrink: 0; margin: 14px 0 0; color: var(--archive-accent); font-size: 12px; line-height: 1.5; }
+.poet-settings-preview-column { min-width: 0; container-type: inline-size; }
+.poet-preview-label { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; color: #fff9ee; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.poet-preview-label > span { width: 6px; height: 6px; border-radius: 50%; background: #e6c4a5; }
+.portfolio-shell .about.poet-settings-preview { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 24px; padding: clamp(24px, 3.2vw, 44px); border: 1px solid var(--archive-accent); border-radius: 24px; background: radial-gradient(ellipse at 90% 12%, var(--glass-wash), transparent 65%), var(--archive-paper); box-shadow: 0 0 0 4px color-mix(in srgb, var(--archive-accent) 30%, transparent), 0 20px 70px #00000035; }
+.poet-settings-preview .about-mark { align-self: start; margin: 24px 0 0; font-size: 72px; }
+.poet-settings-preview blockquote { min-width: 0; overflow-wrap: anywhere; }
+.portfolio-shell .poet-settings-preview .about-copy { grid-column: 2; min-width: 0; max-width: none; margin: 0; padding: 20px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.poet-settings-preview .about-copy p { overflow-wrap: anywhere; }
+.poet-settings-preview .about-copy > p:last-child { margin-top: 14px; font-size: 14px; line-height: 1.7; }
+@media (max-width: 900px) {
+  .poem-reader.archive-dialog.poet-settings-modal { width: calc(100vw - 24px); max-height: calc(var(--dialog-viewport-height, 100dvh) - 24px); }
+  .poet-settings-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .poet-settings-form { max-height: none; padding: 24px; }
+  .poet-settings-fields { overflow-y: visible; }
+  .poet-settings-preview-column { padding: 4px; }
+  .portfolio-shell .about.poet-settings-preview { gap: 18px; padding: 28px 22px; }
+  .portfolio-shell .poet-settings-preview .about-copy { grid-column: 1 / -1; padding: 18px; }
 }
