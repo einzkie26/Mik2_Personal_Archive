@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { ArchiveProfile } from "../lib/archiveTypes";
 import ArchiveDialog from "./ArchiveDialog";
-import PoetSection from "./PoetSection";
 
 type Props = {
   profile: ArchiveProfile;
   onClose: () => void;
   onSave: (profile: ArchiveProfile) => Promise<void>;
+  onPreview: (profile: ArchiveProfile) => void;
 };
 
-export default function ArchiveSettingsDialog({ profile, onClose, onSave }: Props) {
+export default function ArchiveSettingsDialog({ profile, onClose, onSave, onPreview }: Props) {
   // Keep edits local so closing the modal restores the saved poet section.
   const [draft, setDraft] = useState(profile);
   const [volume, setVolume] = useState(String(profile.volume));
@@ -28,6 +28,56 @@ export default function ArchiveSettingsDialog({ profile, onClose, onSave }: Prop
   const volumeNumber = Number(volume);
   const volumeValid = Number.isInteger(volumeNumber) && volumeNumber >= 1 && volumeNumber <= 9999;
   const volumeLabel = volumeValid ? volumeNumber : profile.volume;
+  useEffect(() => {
+    onPreview({ ...draft, volume: volumeLabel });
+  }, [draft, volumeLabel, onPreview]);
+
+  useLayoutEffect(() => {
+    const section = document.getElementById("about");
+    const slot = section?.parentElement;
+    if (!section || !slot) return;
+    // Select the original DOM section and fit it beside the panel without
+    // changing its typography, content layout, or place in the document.
+    slot.style.setProperty("--poet-section-height", `${section.offsetHeight}px`);
+    slot.classList.add("is-selecting");
+    const viewport = window.visualViewport;
+    const positionSelection = () => {
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const width = slot.clientWidth;
+      section.style.setProperty("--poet-selection-width", `${width}px`);
+      section.classList.add("is-selection-positioned");
+      const height = section.offsetHeight;
+      const narrow = viewportWidth <= 900;
+      const panelWidth = Math.min(360, viewportWidth * .32);
+      const areaLeft = viewportLeft + (narrow ? 16 : panelWidth + 48);
+      const areaTop = viewportTop + 16;
+      const areaWidth = Math.max(1, viewportWidth - (narrow ? 32 : panelWidth + 72));
+      const areaHeight = Math.max(1, narrow ? viewportHeight * .5 - 40 : viewportHeight - 32);
+      const scale = Math.min(1, areaWidth / width, areaHeight / height);
+      section.style.setProperty("--poet-selection-scale", String(scale));
+      section.style.setProperty("--poet-selection-left", `${areaLeft + (areaWidth - width * scale) / 2}px`);
+      section.style.setProperty("--poet-selection-top", `${areaTop + (areaHeight - height * scale) / 2}px`);
+    };
+    positionSelection();
+    const observer = new ResizeObserver(positionSelection);
+    observer.observe(section);
+    window.addEventListener("resize", positionSelection);
+    viewport?.addEventListener("resize", positionSelection);
+    viewport?.addEventListener("scroll", positionSelection);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", positionSelection);
+      viewport?.removeEventListener("resize", positionSelection);
+      viewport?.removeEventListener("scroll", positionSelection);
+      section.classList.remove("is-selection-positioned");
+      for (const name of ["width", "scale", "left", "top"]) section.style.removeProperty(`--poet-selection-${name}`);
+      slot.classList.remove("is-selecting");
+      slot.style.removeProperty("--poet-section-height");
+    };
+  }, []);
   function update<K extends keyof ArchiveProfile>(field: K, value: ArchiveProfile[K]) {
     setDraft(current => ({ ...current, [field]: value }));
     setError("");
@@ -46,18 +96,19 @@ export default function ArchiveSettingsDialog({ profile, onClose, onSave }: Prop
     }
   };
 
-  return <ArchiveDialog open onClose={onClose} closeOnBackdrop={!saving} onCancel={event => {
+  return <>
+  <div className="poet-settings-scrim" aria-hidden="true" />
+  <ArchiveDialog open onClose={onClose} closeOnBackdrop={!saving} onCancel={event => {
     event.preventDefault();
     if (!saving) onClose();
   }} ariaLabel="Archive settings" className="poet-settings-modal">
-    <div className="poet-settings-layout">
       <form className="archive-settings-card poet-settings-form" onSubmit={event => void save(event)} aria-busy={saving}>
         <div className="poet-settings-heading">
           <p className="eyebrow">Archive settings</p>
           <button type="button" className="poet-settings-close" aria-label="Close archive settings" disabled={saving} onClick={onClose}>×</button>
         </div>
         <h2>Make it <em>yours.</em></h2>
-        <p className="archive-settings-intro">Edit your archive details and see your poet section update in the preview.</p>
+        <p className="archive-settings-intro">Changes appear directly in the selected poet section.</p>
         <div className="poet-settings-fields">
         <fieldset className="poet-settings-fieldset" disabled={saving}>
           <legend className="sr-only">Archive details and poet profile</legend>
@@ -79,10 +130,6 @@ export default function ArchiveSettingsDialog({ profile, onClose, onSave }: Prop
           <button type="submit" className="profile-save-button" disabled={saving || !volumeValid}>{saving ? "Saving…" : "Save all"}</button>
         </div>
       </form>
-      <aside className="poet-settings-preview-column" aria-label="Poet preview">
-        <p className="poet-preview-label"><span aria-hidden="true" />Live preview</p>
-        <PoetSection profile={{ ...draft, volume: volumeLabel }} preview />
-      </aside>
-    </div>
-  </ArchiveDialog>;
+  </ArchiveDialog>
+  </>;
 }

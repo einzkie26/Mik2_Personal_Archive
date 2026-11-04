@@ -155,6 +155,11 @@ export default function App() {
   const [poetTextColor, setPoetTextColor] = useState("#28261f");
   const [archiveVolume, setArchiveVolume] = useState("1");
   const [archiveSettingsOpen, setArchiveSettingsOpen] = useState(false);
+  const [profilePreview, setProfilePreview] = useState<ArchiveProfile | null>(null);
+  const closeArchiveSettings = () => {
+    setArchiveSettingsOpen(false);
+    setProfilePreview(null);
+  };
   const [profileStatus, setProfileStatus] = useState("");
   const [cardImage, setCardImage] = useState("");
   const [imageEdit, setImageEdit] = useState<ImageEditRequest | null>(null);
@@ -249,7 +254,10 @@ export default function App() {
   }, [archiveLoading]);
 
   useEffect(() => {
-    if (!isOwner) setArchiveSettingsOpen(false);
+    if (!isOwner) {
+      setArchiveSettingsOpen(false);
+      setProfilePreview(null);
+    }
   }, [isOwner]);
 
   useEffect(() => {
@@ -837,11 +845,14 @@ export default function App() {
         </div>
       </ArchiveDialog>
 
-      <PoetSection profile={poetProfile} settingsOpen={archiveSettingsOpen} status={isOwner ? profileStatus : undefined} onOpenSettings={isOwner ? () => {
-        setProfileStatus("");
-        setArchiveSettingsOpen(true);
-      } : undefined} />
-      {isOwner && archiveSettingsOpen && <ArchiveSettingsDialog profile={poetProfile} onClose={() => setArchiveSettingsOpen(false)} onSave={savePoetProfile} />}
+      <div className="poet-section-slot">
+        <PoetSection profile={isOwner && archiveSettingsOpen && profilePreview ? profilePreview : poetProfile} settingsOpen={isOwner && archiveSettingsOpen} status={isOwner ? profileStatus : undefined} onOpenSettings={isOwner ? () => {
+          setProfileStatus("");
+          setProfilePreview(poetProfile);
+          setArchiveSettingsOpen(true);
+        } : undefined} />
+      </div>
+      {isOwner && archiveSettingsOpen && <ArchiveSettingsDialog profile={poetProfile} onClose={closeArchiveSettings} onSave={savePoetProfile} onPreview={setProfilePreview} />}
 
       {isOwner && <section className="studio" id="studio" ref={studioRef}>
         <div className="studio-heading">

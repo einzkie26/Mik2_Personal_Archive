@@ -2,16 +2,15 @@ import type { ArchiveProfile } from "../lib/archiveTypes";
 
 type Props = {
   profile: ArchiveProfile;
-  preview?: boolean;
   settingsOpen?: boolean;
   onOpenSettings?: () => void;
   status?: string;
 };
 
-export default function PoetSection({ profile, preview = false, settingsOpen = false, onOpenSettings, status }: Props) {
+export default function PoetSection({ profile, settingsOpen = false, onOpenSettings, status }: Props) {
   const scale = profile.text_size / 100;
-  return <section className={`about${preview ? " poet-settings-preview is-highlighted" : ""}`} id={preview ? undefined : "about"} aria-label={preview ? "The poet live preview" : "The poet"}>
-    {onOpenSettings && <button type="button" className="poet-settings-toggle" aria-label="Open archive settings" aria-haspopup="dialog" aria-expanded={settingsOpen} title="Archive settings" onClick={event => {
+  return <section className={`about${settingsOpen ? " is-selected is-highlighted" : ""}`} id="about" aria-label="The poet">
+    {onOpenSettings && <button type="button" className="poet-settings-toggle" aria-label="Open archive settings" aria-haspopup="dialog" aria-expanded={settingsOpen} disabled={settingsOpen} title="Archive settings" onClick={event => {
       event.currentTarget.focus({ preventScroll: true });
       onOpenSettings();
     }}>
@@ -20,9 +19,7 @@ export default function PoetSection({ profile, preview = false, settingsOpen = f
     <div className="about-mark" aria-hidden="true">“</div>
     <blockquote style={{
       color: profile.text_color.toLowerCase() === "#28261f" ? "var(--archive-ink)" : profile.text_color,
-      fontSize: preview
-        ? `clamp(${1.4 * scale}rem, ${3.6 * scale}cqw, ${2.8 * scale}rem)`
-        : `clamp(${2.5 * scale}rem, ${4 * scale}vw, ${4.5 * scale}rem)`,
+      fontSize: `clamp(${2.5 * scale}rem, ${4 * scale}vw, ${4.5 * scale}rem)`,
     }}>{profile.quote || "Your quote will appear here."}</blockquote>
     <div className="about-copy">
       <p className="eyebrow">The poet</p>
