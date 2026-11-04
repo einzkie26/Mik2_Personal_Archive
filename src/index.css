@@ -382,7 +382,9 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .favorite-button[aria-pressed="true"] svg { fill: currentColor; }
 .archive-search { width: 100%; padding: 16px 20px; margin-bottom: 30px; background: var(--archive-paper); border: 1px solid var(--archive-rule); border-radius: 12px; }
 .poem-reader { position: fixed; inset: 0; z-index: 40; margin: auto; max-width: 650px; width: calc(100% - 40px); height: fit-content; min-height: 0; max-height: min(85vh, calc(100vh - 32px)); max-height: min(85dvh, calc(100dvh - 32px)); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; border: 1px solid var(--archive-rule); border-radius: 20px; padding: 60px 45px; background: var(--archive-paper); color: var(--archive-ink); }
-.poem-reader::backdrop { background: #28261f88; backdrop-filter: blur(4px); }
+/* The selected poet section stays visible behind Archive Settings. Keep that
+   modal outside the generic blur rule, including in optimized Firefox CSS. */
+.poem-reader:not(.poet-settings-modal)::backdrop { background: #28261f88; backdrop-filter: blur(4px); }
 .poem-reader h2 { font: 400 44px/1.1 "Cormorant Garamond", serif; }
 .reader-body { font: 400 25px/1.6 "Cormorant Garamond", serif; white-space: pre-line; margin-block: 30px; }
 .reader-close { position: absolute; top: 12px; right: 20px; border: 0; background: transparent; font-size: 30px; }
@@ -953,8 +955,8 @@ html[data-rendering-mode="stable"] :is(
   .portfolio-sidebar, .site-header, .poem-card, .archive-filters, .mode-selector,
   .poem-reader, .search-toggle, .sidebar-toggle, .about-copy, .editor, .studio-preview-panel
 ) {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 html[data-rendering-mode="stable"] .poem-reader::backdrop {
   backdrop-filter: none;
@@ -1001,8 +1003,8 @@ html[data-rendering-mode="stable"]::view-transition-new(root) { animation: none;
   zoom: var(--poet-selection-scale);
   transform: none;
   filter: none;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   outline: 3px solid var(--archive-accent);
   outline-offset: 4px;
   box-shadow: 0 0 0 7px color-mix(in srgb, var(--archive-accent) 25%, transparent), 0 20px 70px #00000035;
@@ -1010,8 +1012,8 @@ html[data-rendering-mode="stable"]::view-transition-new(root) { animation: none;
 .about.is-selection-positioned > * { animation: none; opacity: 1; transform: none; }
 .portfolio-shell .about.is-selection-positioned .about-copy {
   background: linear-gradient(140deg, var(--glass-highlight), transparent 65%), var(--archive-paper);
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .poem-reader.archive-dialog.poet-settings-modal {
   inset: var(--dialog-viewport-top, 0px) auto var(--dialog-viewport-bottom, 0px) 24px;
@@ -1023,10 +1025,10 @@ html[data-rendering-mode="stable"]::view-transition-new(root) { animation: none;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
-.poet-settings-modal::backdrop { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.poet-settings-modal::backdrop { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .poet-settings-modal[open] { animation: none; }
 .poet-settings-modal .archive-dialog-content { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .poet-settings-form { display: flex; flex-direction: column; grid-column: auto; max-height: calc(var(--dialog-viewport-height, 100dvh) - 48px); padding: 24px; border-color: var(--archive-rule); background: var(--archive-paper); }
