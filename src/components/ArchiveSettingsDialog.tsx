@@ -62,16 +62,25 @@ export default function ArchiveSettingsDialog({ profile, onClose, onSave, onPrev
       section.style.setProperty("--poet-selection-top", `${areaTop + (areaHeight - height * scale) / 2}px`);
     };
     positionSelection();
-    const observer = new ResizeObserver(positionSelection);
+    let positionFrame = 0;
+    const schedulePosition = () => {
+      if (positionFrame) return;
+      positionFrame = window.requestAnimationFrame(() => {
+        positionFrame = 0;
+        positionSelection();
+      });
+    };
+    const observer = new ResizeObserver(schedulePosition);
     observer.observe(section);
-    window.addEventListener("resize", positionSelection);
-    viewport?.addEventListener("resize", positionSelection);
-    viewport?.addEventListener("scroll", positionSelection);
+    window.addEventListener("resize", schedulePosition);
+    viewport?.addEventListener("resize", schedulePosition);
+    viewport?.addEventListener("scroll", schedulePosition);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", positionSelection);
-      viewport?.removeEventListener("resize", positionSelection);
-      viewport?.removeEventListener("scroll", positionSelection);
+      window.cancelAnimationFrame(positionFrame);
+      window.removeEventListener("resize", schedulePosition);
+      viewport?.removeEventListener("resize", schedulePosition);
+      viewport?.removeEventListener("scroll", schedulePosition);
       section.classList.remove("is-selection-positioned");
       for (const name of ["width", "scale", "left", "top"]) section.style.removeProperty(`--poet-selection-${name}`);
       slot.classList.remove("is-selecting");

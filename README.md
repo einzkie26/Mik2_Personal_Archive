@@ -1,7 +1,7 @@
 # Mik2_Personal_Archive
 The Poetry Archives for Mikhai is here, can do poetry, share some notes and dares anything from people and environment
 
-Card Studio and the entry editor accept unlimited text and show live word, paragraph, and sentence counts. Blank lines separate paragraphs. Apply `supabase/migrations/202611040001_unlimited_entry_text.sql` before deploying this update to remove the database's former 360-character limit. Submit saves the piece to the archive; Instagram sharing remains available in the reader.
+Card Studio and the entry editor accept unlimited text and show live word, paragraph, and sentence counts. Blank lines separate paragraphs. Apply `supabase/migrations/202611040001_unlimited_entry_text.sql` before deploying this update to remove the database's former 360-character limit. Preview in archive shows the unsaved draft in the actual archive grid with the same card layout used after saving. Back to Card Studio keeps the draft and restores the previous archive filters. Submit saves the piece to the archive; Instagram sharing remains available in the reader.
 
 Owner login now uses invisible, score-based reCAPTCHA Enterprise, and the owner's sidebar includes an Activity logs modal. The public site key and Google Cloud project `mikhaiarchive` are configured. Follow [the security setup guide](docs/owner-security.md) to configure the server API key and allowed website origins, apply `202610280001_owner_security_activity.sql`, and deploy the `owner-login` Edge Function before publishing the updated frontend. Existing owner sessions must sign in again.
 

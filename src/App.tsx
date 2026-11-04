@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerPasswordChange from "./components/OwnerPasswordChange";
 import ArchiveDialog from "./components/ArchiveDialog";
+import ArchiveCard from "./components/ArchiveCard";
 import ArchiveSettingsDialog from "./components/ArchiveSettingsDialog";
 import PoetSection from "./components/PoetSection";
 import ActivityLogs from "./components/ActivityLogs";
@@ -40,6 +41,7 @@ type CardDraft = {
   cardImage: string;
 };
 const latestEntryCount = 6;
+const draftEntryNumber = "card-studio-preview";
 
 function entryPublicationTime(entry: ArchiveEntry) {
   const timestamp = Date.parse(entry.created_at || entry.date);
@@ -119,6 +121,10 @@ export default function App() {
   const authenticatedUserId = useRef<string | null>(null);
   const [accessStatus, setAccessStatus] = useState("");
   const studioRef = useRef<HTMLElement>(null);
+  const archivePreviewRef = useRef<HTMLDivElement>(null);
+  const archivePreviewButtonRef = useRef<HTMLButtonElement>(null);
+  const [archivePreviewOpen, setArchivePreviewOpen] = useState(false);
+  const archivePreviewView = useRef<{ filter: string; period: EntryPeriod; query: string; collection: string; searchOpen: boolean; left: number; top: number } | null>(null);
   const [filter, setFilter] = useState("All");
   const [entryPeriod, setEntryPeriod] = useState<EntryPeriod>("latest");
   const [query, setQuery] = useState("");
@@ -214,6 +220,58 @@ export default function App() {
     () => ({ author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage }),
     [author, title, body, activeTheme, fontFamily, shadowOverlay, poemTextSize, category, collection, isPublic, cardImage],
   );
+  const draftArchiveEntry = useMemo<ArchiveEntry>(() => {
+    const palette = themes[cardDraft.activeTheme];
+    return {
+      number: draftEntryNumber,
+      title: cardDraft.title.trim() || "Untitled",
+      excerpt: cardDraft.body.trim(),
+      category: cardDraft.category,
+      author: cardDraft.author,
+      collection: cardDraft.collection.trim() || "Personal collection",
+      is_public: cardDraft.isPublic,
+      image_url: cardDraft.cardImage || null,
+      theme_background: palette.background,
+      theme_ink: palette.ink,
+      theme_accent: palette.accent,
+      font_family: cardDraft.fontFamily,
+      shadow_overlay: cardDraft.shadowOverlay,
+      poem_text_size: cardDraft.poemTextSize,
+      likes: 0,
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+      tone: cardDraft.category === "Poem" ? "blush" : cardDraft.category === "Prose" ? "sage" : "sand",
+    };
+  }, [cardDraft]);
+  const archivePreviewVisible = isOwner && archivePreviewOpen;
+  const openArchivePreview = () => {
+    if (!isOwner || submitting || !body.trim() || !collectionValid || imageEdit) return;
+    if (!archivePreviewOpen) archivePreviewView.current = { filter, period: entryPeriod, query, collection: collectionFilter, searchOpen, left: window.scrollX, top: window.scrollY };
+    setFilter("All");
+    setEntryPeriod("latest");
+    setQuery("");
+    setCollectionFilter("");
+    setArchivePreviewOpen(true);
+    window.requestAnimationFrame(() => {
+      archivePreviewRef.current?.scrollIntoView({ behavior: "instant", block: "start" });
+      archivePreviewRef.current?.focus({ preventScroll: true });
+    });
+  };
+  const closeArchivePreview = () => {
+    const previous = archivePreviewView.current;
+    setArchivePreviewOpen(false);
+    archivePreviewView.current = null;
+    if (previous) {
+      setFilter(previous.filter);
+      setEntryPeriod(previous.period);
+      setQuery(previous.query);
+      setCollectionFilter(previous.collection);
+      setSearchOpen(previous.searchOpen);
+    }
+    window.requestAnimationFrame(() => {
+      if (previous) window.scrollTo({ left: previous.left, top: previous.top, behavior: "instant" });
+      archivePreviewButtonRef.current?.focus({ preventScroll: true });
+    });
+  };
   const collectionNames = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.collection).filter((name): name is string => Boolean(name)))).sort(),
     [entries],
@@ -235,6 +293,7 @@ export default function App() {
       `${poem.title} ${poem.excerpt}`.toLowerCase().includes(searchQuery),
     );
   }, [periodEntries, filter, collectionFilter, query]);
+  const displayedEntries = archivePreviewVisible && entryPeriod === "latest" ? visibleEntries.slice(0, latestEntryCount - 1) : visibleEntries;
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -257,6 +316,9 @@ export default function App() {
     if (!isOwner) {
       setArchiveSettingsOpen(false);
       setProfilePreview(null);
+      setArchivePreviewOpen(false);
+      archivePreviewView.current = null;
+      setReading(current => current?.number === draftEntryNumber ? null : current);
     }
   }, [isOwner]);
 
@@ -560,23 +622,9 @@ export default function App() {
   const submitPoem = async () => {
     if (!isOwner || !session || submitting || deletingCollection || !body.trim() || !collectionValid || imageEdit) return;
     const entry: ArchiveEntry = {
+      ...draftArchiveEntry,
       number: crypto.randomUUID(),
-      title: title.trim() || "Untitled",
-      excerpt: body.trim(),
-      category,
-      author,
-      collection: collection.trim() || "Personal collection",
-      is_public: isPublic,
-      image_url: cardImage || null,
-      theme_background: theme.background,
-      theme_ink: theme.ink,
-      theme_accent: theme.accent,
-      font_family: fontFamily,
-      shadow_overlay: shadowOverlay,
-      poem_text_size: poemTextSize,
-      likes: 0,
       date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      tone: category === "Poem" ? "blush" : category === "Prose" ? "sage" : "sand",
     };
     setSubmitting(true);
     setSubmitStatus("");
@@ -597,7 +645,10 @@ export default function App() {
     try { localStorage.setItem("verse-poem-draft", JSON.stringify(cardDraft)); } catch {}
     setFilter("All");
     setQuery("");
+    setCollectionFilter("");
     setEntryPeriod("latest");
+    setArchivePreviewOpen(false);
+    archivePreviewView.current = null;
     setSubmitStatus("Submitted to your archive.");
     setSubmitting(false);
   };
@@ -764,46 +815,31 @@ export default function App() {
         {!archiveLoading && entries.length > 0 && <p className="archive-period-description">{entryPeriod === "latest" ? "The six most recent pieces. Earlier pieces are in Previous entries." : "Earlier pieces, with the most recent first."}</p>}
         {archiveError && <p className="archive-share-status" role="alert">{archiveError}</p>}
         {archiveLoading && <p className="empty-archive" role="status">Gathering the latest entries…</p>}
-        {!archiveLoading && !archiveError && entries.length === 0 && <p className="empty-archive">The archive is quiet for now. New pieces will appear here when published.</p>}
+        {!archiveLoading && !archiveError && entries.length === 0 && !archivePreviewVisible && <p className="empty-archive">The archive is quiet for now. New pieces will appear here when published.</p>}
         {submitStatus && <div className="archive-share-status"><p role="status">{submitStatus}</p></div>}
         {searchOpen && <input className="archive-search" aria-label="Search entries" placeholder="Find a title or a line…" value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />}
+        {archivePreviewVisible && <div className="archive-preview-toolbar" ref={archivePreviewRef} tabIndex={-1} role="region" aria-label="Archive preview">
+          <div><p className="archive-preview-label" role="status">Unsaved archive preview</p><p>This is how your piece will appear when saved.{!isPublic && " This piece will be hidden from public visitors."}</p></div>
+          <div className="archive-preview-actions">
+            <button type="button" disabled={submitting} onClick={closeArchivePreview}>Back to Card Studio</button>
+            <button type="button" className="archive-preview-submit" disabled={submitting || !body.trim() || !collectionValid || deletingCollection !== null || imageEdit !== null} onClick={() => void submitPoem()}>{submitting ? "Submitting…" : "Submit"}<ArrowIcon /></button>
+          </div>
+        </div>}
         <div className="poem-grid">
-          {visibleEntries.map((poem) => (
-            <article className="poem-card" key={poem.number} onClick={(event) => { if ((event.target as HTMLElement).closest("button, a")) return; setReading(poem); setReaderShareStatus(""); }}>
-              <div
-                className={`quote-panel ${poem.tone}${poem.image_url ? " has-card-image" : ""}`}
-                style={{
-                  backgroundColor: poem.theme_background,
-                  color: poem.theme_ink,
-                  "--quote-image-color": poem.theme_background,
-                  "--quote-image": poem.image_url ? `url(${JSON.stringify(poem.image_url)})` : undefined,
-                } as CSSProperties}
-              >
-                <span aria-hidden="true">“</span>
-                <CardShadow value={poem.shadow_overlay} />
-                <blockquote style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${25 * getPoemTextSize(poem.poem_text_size) / 100}px`, color: poem.theme_ink }}>{poem.excerpt}</blockquote>
-              </div>
-              <div className="entry-content">
-              <div className="poem-meta">
-                <span>{poem.category}</span>
-                <span>{poem.date}</span>
-              </div>
-              <h3 style={{ fontFamily: getCardFont(poem.font_family).family }}>{poem.title}</h3>
-              {poem.collection && <span className="entry-collection">From {poem.collection}</span>}
-              <p style={{ fontFamily: getCardFont(poem.font_family).family, fontSize: `${17 * getPoemTextSize(poem.poem_text_size) / 100}px` }}>{poem.excerpt}</p>
-              <div className="entry-actions">
-                <button className={`favorite-button ${likedNumbers.includes(poem.number) ? "is-liked" : ""}`} aria-label={`${likedNumbers.includes(poem.number) ? "Unlike" : "Like"} ${poem.title}`} aria-pressed={likedNumbers.includes(poem.number)} onClick={() => void toggleLike(poem)}><svg viewBox="0 0 24 24" fill={likedNumbers.includes(poem.number) ? "currentColor" : "none"}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{poem.likes}</span></button>
-                <button aria-label={`Read ${poem.title}`} onClick={() => { setReading(poem); setReaderShareStatus(""); }}>Read piece <ArrowIcon /></button>
-                {isOwner && <>
-                  <button className="entry-edit-button" aria-label={`Edit ${poem.title}`} onClick={() => setEditingEntry({ ...poem })}>Edit</button>
-                  <button className="entry-delete-button" aria-label={`Delete ${poem.title}`} disabled={deletingNumber === poem.number} onClick={() => requestDelete(poem)}>{deletingNumber === poem.number ? "Deleting…" : "Delete"}</button>
-                </>}
-              </div>
-              </div>
-            </article>
-          ))}
+          {archivePreviewVisible && <ArchiveCard entry={draftArchiveEntry} isOwner preview onRead={() => { setReading(draftArchiveEntry); setReaderShareStatus(""); }} />}
+          {displayedEntries.map(poem => <ArchiveCard
+            key={poem.number}
+            entry={poem}
+            isOwner={isOwner}
+            liked={likedNumbers.includes(poem.number)}
+            deleting={deletingNumber === poem.number}
+            onRead={() => { setReading(poem); setReaderShareStatus(""); }}
+            onLike={() => void toggleLike(poem)}
+            onEdit={() => setEditingEntry({ ...poem })}
+            onDelete={() => requestDelete(poem)}
+          />)}
         </div>
-        {!archiveLoading && !archiveError && entries.length > 0 && visibleEntries.length === 0 && <p className="empty-archive">{entryPeriod === "previous" && periodEntries.length === 0 ? "No previous entries yet. Earlier pieces will appear here as the archive grows." : "No entries found in this group. Try another filter or entry period."}</p>}
+        {!archiveLoading && !archiveError && !archivePreviewVisible && entries.length > 0 && visibleEntries.length === 0 && <p className="empty-archive">{entryPeriod === "previous" && periodEntries.length === 0 ? "No previous entries yet. Earlier pieces will appear here as the archive grows." : "No entries found in this group. Try another filter or entry period."}</p>}
       </section>
       <ArchiveDialog open={collectionsOpen} onClose={() => setCollectionsOpen(false)} closeLabel="Close collections" ariaLabel="Browse collections" className="collections-modal">
         <p className="eyebrow">The archive</p>
@@ -899,6 +935,7 @@ export default function App() {
           </fieldset>
           <ShadowPicker value={shadowOverlay} onChange={setShadowOverlay} />
           <div className="studio-share-area">
+            <button type="button" className="archive-preview-button" ref={archivePreviewButtonRef} aria-expanded={archivePreviewVisible} aria-controls={archivePreviewVisible ? "archive-draft-preview" : undefined} disabled={submitting || !body.trim() || !collectionValid || imageEdit !== null} onClick={openArchivePreview}>Preview in archive<ArrowIcon /></button>
             <button className="share-button" onClick={() => void submitPoem()} disabled={submitting || deletingCollection !== null || !body.trim() || !collectionValid || imageEdit !== null}>{submitting ? "Submitting…" : "Submit"}<ArrowIcon /></button>
             <p>Saves this piece to your archive.</p>
             {submitStatus && <p className="studio-share-feedback" role="status">{submitStatus}</p>}
