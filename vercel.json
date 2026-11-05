@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "buildCommand": "pnpm run build",
   "functions": {
     "api/share.ts": {
       "includeFiles": "{dist/index.html,server/fonts/**}",

@@ -17,9 +17,19 @@ export function pieceUrl(number: string, origin: string) {
   return new URL(piecePath(number), origin).href;
 }
 
+function previewVersion(version?: string) {
+  const timestamp = Date.parse(version || "");
+  return Number.isFinite(timestamp) ? `2.${timestamp.toString(36)}` : "2";
+}
+
+export function pieceShareUrl(number: string, origin: string, version?: string) {
+  const url = new URL(piecePath(number), origin);
+  url.searchParams.set("share", previewVersion(version));
+  return url.href;
+}
+
 export function pieceImagePath(number: string, version?: string) {
-  const pathname = `${piecePath(number)}/image.png`;
-  return version ? `${pathname}?v=${encodeURIComponent(version)}` : pathname;
+  return `${piecePath(number)}/image.png?v=${previewVersion(version)}`;
 }
 
 export function pieceDescription(text: string, limit = 220) {

@@ -24,7 +24,7 @@ import { usesStableRendering } from "./lib/browser";
 import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
 import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/cardShadows";
 import { defaultPoemTextSize, getPoemTextSize } from "./lib/poemTextSize";
-import { pieceNumberFromPath, piecePath, pieceUrl } from "./lib/pieceLinks";
+import { pieceNumberFromPath, piecePath, pieceShareUrl } from "./lib/pieceLinks";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type EntryPeriod = "latest" | "previous";
@@ -328,7 +328,7 @@ export default function App() {
   const copyPieceLink = async () => {
     if (!reading?.is_public || reading.number === draftEntryNumber) return;
     try {
-      await navigator.clipboard.writeText(pieceUrl(reading.number, window.location.origin));
+      await navigator.clipboard.writeText(pieceShareUrl(reading.number, window.location.origin, reading.updated_at || reading.created_at));
       setPieceLinkStatus("Link copied. Paste it into your post or message.");
     } catch {
       const field = document.getElementById("piece-share-url") as HTMLInputElement | null;
@@ -954,10 +954,10 @@ export default function App() {
         {reading?.is_public && reading.number !== draftEntryNumber ? <div className="piece-link-share">
           <label className="eyebrow" htmlFor="piece-share-url">Share this piece</label>
           <div className="piece-link-field">
-            <input id="piece-share-url" readOnly value={pieceUrl(reading.number, window.location.origin)} onClick={event => event.currentTarget.select()} />
+            <input id="piece-share-url" readOnly value={pieceShareUrl(reading.number, window.location.origin, reading.updated_at || reading.created_at)} onClick={event => event.currentTarget.select()} />
             <button type="button" onClick={() => void copyPieceLink()}>Copy link</button>
           </div>
-          <a className="piece-facebook-link" href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pieceUrl(reading.number, window.location.origin))}`} target="_blank" rel="noopener noreferrer">Share to Facebook <ArrowIcon /></a>
+          <a className="piece-facebook-link" href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pieceShareUrl(reading.number, window.location.origin, reading.updated_at || reading.created_at))}`} target="_blank" rel="noopener noreferrer">Share to Facebook <ArrowIcon /></a>
           <p className="reader-share-hint">Facebook and supported apps can show the card and writing as a link preview. For Instagram, share the image below and add this URL as a Story or profile link.</p>
           {pieceLinkStatus && <p className="piece-link-status" role="status">{pieceLinkStatus}</p>}
         </div> : reading && <p className="reader-share-hint">{reading.number === draftEntryNumber ? "Submit this piece before sharing a link." : "This piece is private. Make it public before sharing a link."}</p>}

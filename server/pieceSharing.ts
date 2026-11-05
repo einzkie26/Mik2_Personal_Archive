@@ -1,4 +1,4 @@
-import { pieceDescription, pieceImagePath, pieceNumberFromPath, piecePath, pieceUrl } from "../src/lib/pieceLinks.ts";
+import { pieceDescription, pieceImagePath, pieceNumberFromPath, piecePath, pieceShareUrl, pieceUrl } from "../src/lib/pieceLinks.ts";
 import type { ArchiveEntry } from "../src/lib/archiveTypes.ts";
 
 type Options = {
@@ -21,7 +21,9 @@ export function piecePageHtml(shell: string, entry: ArchiveEntry | null, origin:
   const title = escapeHtml(entry.title);
   const description = escapeHtml(pieceDescription(entry.excerpt));
   const url = escapeHtml(pieceUrl(entry.number, origin));
-  const image = escapeHtml(new URL(pieceImagePath(entry.number, entry.updated_at || entry.created_at), origin).href);
+  const version = entry.updated_at || entry.created_at;
+  const shareUrl = escapeHtml(pieceShareUrl(entry.number, origin, version));
+  const image = escapeHtml(new URL(pieceImagePath(entry.number, version), origin).href);
   const author = escapeHtml(entry.author || "Mikhai");
   const metadata = `<title>${title} · ${author}</title>
 <meta name="description" content="${description}">
@@ -30,8 +32,9 @@ export function piecePageHtml(shell: string, entry: ArchiveEntry | null, origin:
 <meta property="og:site_name" content="Mikhai: A Personal Archive">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
-<meta property="og:url" content="${url}">
+<meta property="og:url" content="${shareUrl}">
 <meta property="og:image" content="${image}">
+<meta property="og:image:secure_url" content="${image}">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">

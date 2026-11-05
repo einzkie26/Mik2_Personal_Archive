@@ -1,0 +1,2 @@
+# These small runtime assets must be available in every deployment checkout.
+*.ttf -filter -diff -merge -text

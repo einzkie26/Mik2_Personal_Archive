@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { pieceDescription, pieceImagePath, pieceNumberFromPath, piecePath, pieceUrl } from '../src/lib/pieceLinks.ts';
+import { pieceDescription, pieceImagePath, pieceNumberFromPath, piecePath, pieceShareUrl, pieceUrl } from '../src/lib/pieceLinks.ts';
 import { createPieceShareHandler, piecePageHtml } from '../server/pieceSharing.ts';
 import { renderPieceImage } from '../server/pieceImage.ts';
 import { cardFonts } from '../src/lib/cardFonts.ts';
@@ -36,9 +36,17 @@ test('piece links support saved UUIDs, legacy numbers, encoded IDs and image ver
     assert.equal(pieceNumberFromPath(piecePath(id)), id);
     assert.equal(pieceUrl(id, 'https://poems.example.test'), `https://poems.example.test${piecePath(id)}`);
   }
-  assert.equal(pieceImagePath('01', entry.updated_at), '/piece/01/image.png?v=2026-11-05T09%3A00%3A00Z');
+  assert.equal(pieceImagePath('01', entry.updated_at), '/piece/01/image.png?v=2.mw3belc0');
   assert.equal(pieceNumberFromPath('/piece/01/'), '01');
   for (const path of ['/', '/#poems', '/piece/', '/piece/%', '/piece/%00', '/piece/a%2Fb', `/piece/${'x'.repeat(65)}`]) assert.equal(pieceNumberFromPath(path), null);
+});
+
+test('sharing gets a fresh stable preview URL while reader URLs remain permanent', () => {
+  assert.equal(pieceShareUrl('01', 'https://poems.example.test', entry.updated_at), 'https://poems.example.test/piece/01?share=2.mw3belc0');
+  assert.equal(pieceShareUrl('01', 'https://poems.example.test'), 'https://poems.example.test/piece/01?share=2');
+  assert.equal(pieceImagePath('01'), '/piece/01/image.png?v=2');
+  assert.equal(pieceUrl('01', 'https://poems.example.test'), 'https://poems.example.test/piece/01');
+  assert.notEqual(pieceShareUrl('01', 'https://poems.example.test', '2026-11-06T09:00:00Z'), pieceShareUrl('01', 'https://poems.example.test', entry.updated_at));
 });
 
 test('social descriptions preserve readable Unicode and bound unlimited writing', () => {
@@ -56,10 +64,12 @@ test('public link HTML includes server-rendered metadata and an absolute PNG thu
   assert.equal(response.headers.get('Content-Type'), 'text/html; charset=utf-8');
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.match(html, /property="og:title" content="The light we leave on"/);
-  assert.match(html, /property="og:url" content="https:\/\/poems.example.test\/piece\/01"/);
+  assert.match(html, /property="og:url" content="https:\/\/poems.example.test\/piece\/01\?share=2.mw3belc0"/);
+  assert.match(html, /rel="canonical" href="https:\/\/poems.example.test\/piece\/01"/);
   assert.match(html, /property="og:image" content="https:\/\/poems.example.test\/piece\/01\/image.png\?v=/);
   assert.match(html, /property="og:image:width" content="1200"/);
   assert.match(html, /property="og:image:height" content="630"/);
+  assert.match(html, /property="og:image:secure_url" content="https:\/\/poems.example.test\/piece\/01\/image.png\?v=2.mw3belc0"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /At dusk, every window/);
   assert.match(html, /<noscript>/);
@@ -71,6 +81,18 @@ test('public link HTML includes server-rendered metadata and an absolute PNG thu
   assert.equal(f.calls[0].url.searchParams.get('is_public'), 'eq.true');
   assert.equal(f.calls[0].url.searchParams.get('number'), 'eq.01');
   assert.ok(!f.calls[0].url.searchParams.get('select').includes('image_url'), 'HTML metadata avoids downloading a large background image');
+});
+
+test('versioned Facebook links are crawlable and identify the same share URL and thumbnail', async () => {
+  const f = fixture(), url = pieceShareUrl(entry.number, 'https://poems.example.test', entry.updated_at);
+  const response = await f.run(new URL(url).pathname + new URL(url).search, { headers: { 'User-Agent': 'facebookexternalhit/1.1' } });
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  const ogUrl = html.match(/property="og:url" content="([^"]+)"/)[1];
+  assert.equal(ogUrl, url);
+  const image = new URL(html.match(/property="og:image" content="([^"]+)"/)[1]);
+  assert.equal(image.searchParams.get('v'), new URL(url).searchParams.get('share'));
+  assert.equal((await f.run(image.pathname + image.search)).headers.get('Content-Type'), 'image/png');
 });
 
 test('metadata and no-script writing escape HTML from saved titles, author and body', () => {
