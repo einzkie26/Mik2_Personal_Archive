@@ -14,8 +14,10 @@ Deploy the repository to Vercel with the Vite framework preset, its normal build
 
 `vercel.json` routes `/piece/:number` and `/piece/:number/image.png` to `api/share.ts`. The function includes the built HTML shell and bundled fonts. It uses the same public Supabase configuration as the frontend, with anonymous database access and an explicit `is_public` filter. No service-role key, new environment variable, storage bucket, or database migration is required.
 
+The function uses explicit TypeScript import extensions. Keep `rewriteRelativeImportExtensions` enabled in `tsconfig.json` so the deployed JavaScript imports resolve in Node. The shared Supabase configuration is a plain `.ts` module so Vercel includes it in the compiled function. The thumbnail renderer loads only for image requests.
+
 Private, deleted, and missing pieces return 404 without their title, body or image in public metadata. Anonymous preview requests never use a viewer's owner session. Responses are not cached by this service, so making a piece private immediately blocks new page and image requests. Social networks can retain previews they previously fetched; the site cannot remove copies already stored by those services.
 
 After deploying, open a public piece URL in a new tab, then open the `og:image` URL from its page source. It must return a PNG without signing in or executing JavaScript. Use [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/) to request a fresh scrape if Facebook has an earlier preview cached. Vercel deployment protection must allow public requests to the production site for social crawlers to fetch it.
 
-`vite` and `vite preview` run the frontend alone. Use `vercel dev` when checking the Vercel functions locally. Run `node --test tests/piece-sharing.test.mjs` to check metadata, public access, generated images and all font choices without accessing the live database.
+`vite` and `vite preview` run the frontend alone. Use `vercel dev` when checking the Vercel functions locally. Run `node --test tests/piece-sharing.test.mjs tests/share-function.test.mjs` to check metadata, public access, generated images, font choices, and a cold start from compiled JavaScript without accessing the live database.
