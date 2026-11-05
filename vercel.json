@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "functions": {
+    "api/share.ts": {
+      "includeFiles": "{dist/index.html,server/fonts/**}",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/piece/:number/image.png", "destination": "/api/share?number=:number&image=1" },
+    { "source": "/piece/:number", "destination": "/api/share?number=:number" }
+  ]
+}

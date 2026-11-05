@@ -24,6 +24,7 @@ import { usesStableRendering } from "./lib/browser";
 import { defaultCardFont, getCardFont, type CardFontId } from "./lib/cardFonts";
 import { getCardShadow, getCardShadowSource, type CardShadowId } from "./lib/cardShadows";
 import { defaultPoemTextSize, getPoemTextSize } from "./lib/poemTextSize";
+import { pieceNumberFromPath, piecePath, pieceUrl } from "./lib/pieceLinks";
 import { archiveRequest, authLog, deleteArchiveEntry, deleteEmptyArchiveCollection, supabase, toggleArchiveLike } from "./lib/supabase";
 
 type EntryPeriod = "latest" | "previous";
@@ -133,6 +134,9 @@ export default function App() {
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [collectionQuery, setCollectionQuery] = useState("");
   const [reading, setReading] = useState<ArchiveEntry | null>(null);
+  const [activePieceNumber, setActivePieceNumber] = useState(() => pieceNumberFromPath(window.location.pathname));
+  const [pieceLinkError, setPieceLinkError] = useState("");
+  const [pieceLinkStatus, setPieceLinkStatus] = useState("");
   const [readerShareStatus, setReaderShareStatus] = useState("");
   const [readerSharing, setReaderSharing] = useState(false);
   const [category, setCategory] = useState<EntryCategory>("Poem");
@@ -295,6 +299,68 @@ export default function App() {
     );
   }, [periodEntries, filter, collectionFilter, query]);
   const displayedEntries = archivePreviewVisible && entryPeriod === "latest" ? visibleEntries.slice(0, latestEntryCount - 1) : visibleEntries;
+
+  const openPiece = (entry: ArchiveEntry) => {
+    setReaderShareStatus("");
+    setPieceLinkStatus("");
+    setPieceLinkError("");
+    setReading(entry);
+    if (entry.number === draftEntryNumber) return;
+    if (pieceNumberFromPath(window.location.pathname) !== entry.number) {
+      window.history.pushState({ ...window.history.state, mikhaiPieceReader: true }, "", piecePath(entry.number));
+    }
+    setActivePieceNumber(entry.number);
+  };
+
+  const closePiece = () => {
+    setReading(null);
+    setPieceLinkError("");
+    setPieceLinkStatus("");
+    setActivePieceNumber(null);
+    if (!pieceNumberFromPath(window.location.pathname)) return;
+    if (window.history.state?.mikhaiPieceReader) window.history.back();
+    else {
+      window.history.replaceState(null, "", "/#poems");
+      requestAnimationFrame(() => document.getElementById("poems")?.scrollIntoView());
+    }
+  };
+
+  const copyPieceLink = async () => {
+    if (!reading?.is_public || reading.number === draftEntryNumber) return;
+    try {
+      await navigator.clipboard.writeText(pieceUrl(reading.number, window.location.origin));
+      setPieceLinkStatus("Link copied. Paste it into your post or message.");
+    } catch {
+      const field = document.getElementById("piece-share-url") as HTMLInputElement | null;
+      field?.focus();
+      field?.select();
+      setPieceLinkStatus("Select and copy the link above to share this piece.");
+    }
+  };
+
+  useEffect(() => {
+    const followLocation = () => {
+      const number = pieceNumberFromPath(window.location.pathname);
+      setActivePieceNumber(number);
+      setPieceLinkStatus("");
+      setReaderShareStatus("");
+      setPieceLinkError("");
+      if (!number) setReading(null);
+    };
+    window.addEventListener("popstate", followLocation);
+    return () => window.removeEventListener("popstate", followLocation);
+  }, []);
+
+  useEffect(() => {
+    if (!activePieceNumber || archiveLoading) return;
+    const entry = entries.find(entry => entry.number === activePieceNumber && (entry.is_public || isOwner));
+    setReading(entry || null);
+    setPieceLinkError(entry ? "" : archiveError ? "This piece could not be loaded. Please refresh the page to try again." : "This piece may be private or no longer in the archive.");
+  }, [activePieceNumber, entries, archiveLoading, archiveError, isOwner]);
+
+  useEffect(() => {
+    document.title = reading && reading.number !== draftEntryNumber ? `${reading.title} · ${reading.author || "Mikhai"}` : "Mikhai: A Personal Archive";
+  }, [reading?.number, reading?.title, reading?.author]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -839,14 +905,14 @@ export default function App() {
           </div>
         </div>}
         <div className="poem-grid">
-          {archivePreviewVisible && <ArchiveCard entry={draftArchiveEntry} isOwner preview onRead={() => { setReading(draftArchiveEntry); setReaderShareStatus(""); }} />}
+          {archivePreviewVisible && <ArchiveCard entry={draftArchiveEntry} isOwner preview onRead={() => openPiece(draftArchiveEntry)} />}
           {displayedEntries.map(poem => <ArchiveCard
             key={poem.number}
             entry={poem}
             isOwner={isOwner}
             liked={likedNumbers.includes(poem.number)}
             deleting={deletingNumber === poem.number}
-            onRead={() => { setReading(poem); setReaderShareStatus(""); }}
+            onRead={() => openPiece(poem)}
             onLike={() => void toggleLike(poem)}
             onEdit={() => setEditingEntry({ ...poem })}
             onDelete={() => requestDelete(poem)}
@@ -872,7 +938,10 @@ export default function App() {
         onSave={saveEditedEntry}
         onDeleteCollection={deleteCollection}
       />}
-      <ArchiveDialog open={reading !== null} onClose={() => setReading(null)} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
+      <ArchiveDialog open={Boolean(pieceLinkError)} onClose={closePiece} closeLabel="Close unavailable piece" ariaLabel="Piece unavailable">
+        <p className="eyebrow">The archive</p><h2>Piece unavailable.</h2><p>{pieceLinkError}</p><button className="piece-return-button" onClick={closePiece}>Back to archive</button>
+      </ArchiveDialog>
+      <ArchiveDialog open={reading !== null} onClose={closePiece} closeLabel="Close poem" ariaLabel={reading?.title || "Read poem"}>
         <div className={`reader-palette${reading?.image_url ? " has-card-image" : ""}`} style={{
           backgroundColor: reading?.theme_background,
           color: reading?.theme_ink,
@@ -882,6 +951,16 @@ export default function App() {
           <CardShadow value={reading?.shadow_overlay} />
           <p className="eyebrow">{reading?.category} · {reading?.date}</p><h2 style={{ fontFamily: getCardFont(reading?.font_family).family }}>{reading?.title}</h2><p className="reader-body" style={{ fontFamily: getCardFont(reading?.font_family).family, fontSize: `${25 * getPoemTextSize(reading?.poem_text_size) / 100}px` }}>{reading?.excerpt}</p>
         </div>
+        {reading?.is_public && reading.number !== draftEntryNumber ? <div className="piece-link-share">
+          <label className="eyebrow" htmlFor="piece-share-url">Share this piece</label>
+          <div className="piece-link-field">
+            <input id="piece-share-url" readOnly value={pieceUrl(reading.number, window.location.origin)} onClick={event => event.currentTarget.select()} />
+            <button type="button" onClick={() => void copyPieceLink()}>Copy link</button>
+          </div>
+          <a className="piece-facebook-link" href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pieceUrl(reading.number, window.location.origin))}`} target="_blank" rel="noopener noreferrer">Share to Facebook <ArrowIcon /></a>
+          <p className="reader-share-hint">Facebook and supported apps can show the card and writing as a link preview. For Instagram, share the image below and add this URL as a Story or profile link.</p>
+          {pieceLinkStatus && <p className="piece-link-status" role="status">{pieceLinkStatus}</p>}
+        </div> : reading && <p className="reader-share-hint">{reading.number === draftEntryNumber ? "Submit this piece before sharing a link." : "This piece is private. Make it public before sharing a link."}</p>}
         <div className="reader-share-section">
           <p className="eyebrow">Share on Instagram</p>
           <div className="reader-share-options">

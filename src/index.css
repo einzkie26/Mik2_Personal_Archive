@@ -375,7 +375,9 @@ h1 em, .studio-heading em { color: #b64d36; font-weight: 300; }
 .poem-card h3 { color: var(--archive-ink); font: 400 38px/1.15 "Cormorant Garamond", serif; margin: 26px 0 18px; }
 .poem-card .entry-content > p { margin: 0 0 28px; font: 400 17px/1.65 "DM Sans", sans-serif; color: var(--archive-muted); }
 .entry-actions { margin-top: auto; padding-top: 28px; border-top: 1px solid var(--archive-rule); display: flex; align-items: center; justify-content: space-between; }
-.entry-actions button { padding: 8px; font-size: 13px; letter-spacing: .17em; }
+.entry-actions :is(button, a) { padding: 8px; font-size: 13px; letter-spacing: .17em; }
+.entry-actions > a { display: flex; align-items: center; gap: 10px; }
+.poem-card a.quote-panel:hover { opacity: 1; }
 .entry-actions svg { width: 24px; height: 24px; }
 .favorite-button { color: var(--archive-muted) !important; }
 .favorite-button[aria-pressed="true"] { color: var(--archive-accent) !important; }
@@ -602,6 +604,14 @@ button:hover, a:hover { opacity: .8; }
 }
 .poem-card { cursor: pointer; }
 .reader-share-section { border-top: 1px solid var(--archive-rule); margin-top: 35px; padding-top: 25px; }
+.piece-link-share { margin-top: 28px; }
+.piece-link-share > label { display: block; margin-bottom: 12px; }
+.piece-link-field { display: flex; gap: 8px; }
+.piece-link-field input { flex: 1; min-width: 0; border: 1px solid var(--archive-rule); border-radius: 9px; padding: 12px; background: var(--archive-ground); color: var(--archive-ink); font-size: 12px; }
+.piece-link-field button, .piece-return-button { flex-shrink: 0; border: 1px solid var(--archive-rule); border-radius: 9px; padding: 12px 15px; background: var(--archive-ground); color: var(--archive-ink); font-size: 12px; }
+.piece-facebook-link { display: inline-flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--archive-accent); font-size: 13px; }
+.piece-facebook-link svg { width: 20px; height: 20px; }
+.piece-link-status { font-size: 12px; line-height: 1.6; color: var(--archive-accent); }
 .reader-share-section .eyebrow { margin-bottom: 16px; }
 .reader-share-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .reader-share-options button { display: flex; align-items: center; gap: 12px; text-align: left; padding: 17px 14px; border: 1px solid var(--archive-rule); border-radius: 12px; background: var(--archive-ground); color: var(--archive-ink); font-size: 13px; }
@@ -853,12 +863,12 @@ button:hover, a:hover { opacity: .8; }
 .portfolio-shell .poem-card:last-child { border-right-color: var(--glass-edge); }
 .portfolio-shell .poem-card { position: relative; transition: box-shadow .35s ease, border-color .35s ease; }
 .portfolio-shell .quote-panel:not(.has-card-image) { background-image: linear-gradient(135deg, var(--glass-highlight), transparent 60%); }
-.portfolio-shell .entry-actions button { color: var(--archive-ink); }
-.portfolio-shell .entry-actions button svg { transition: transform .25s ease; }
+.portfolio-shell .entry-actions :is(button, a) { color: var(--archive-ink); }
+.portfolio-shell .entry-actions :is(button, a) svg { transition: transform .25s ease; }
 .portfolio-shell .entry-actions .favorite-button { gap: 5px; }
 .portfolio-shell .entry-actions .favorite-button span { min-width: 1.2em; color: var(--archive-muted); font-size: 11px; letter-spacing: 0; }
 .portfolio-shell .entry-actions .favorite-button.is-liked { color: var(--archive-accent); }
-.portfolio-shell .entry-actions button:hover svg { transform: translateX(4px); }
+.portfolio-shell .entry-actions :is(button, a):hover svg { transform: translateX(4px); }
 .portfolio-shell .entry-actions .favorite-button:hover svg { transform: scale(1.15); }
 .portfolio-shell .about-copy,
 .portfolio-shell .editor {
