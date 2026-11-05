@@ -1,4 +1,4 @@
-# Sharing a piece
+# Sharing a piece - Last Patch for this website
 
 Click a saved card, its title, or Read piece to open its reader and update the address to `/piece/:number`. The number stays the same after an edit. The URL opens that piece directly on refresh or in another tab, including pieces outside the latest six entries. Closing the reader returns to the archive; browser Back and Forward also work.
 
@@ -20,4 +20,10 @@ Private, deleted, and missing pieces return 404 without their title, body or ima
 
 After deploying, open a public piece URL in a new tab, then open the `og:image` URL from its page source. It must return a PNG without signing in or executing JavaScript. Use [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/) to request a fresh scrape if Facebook has an earlier preview cached. Vercel deployment protection must allow public requests to the production site for social crawlers to fetch it.
 
+<<<<<<< HEAD
 `vite` and `vite preview` run the frontend alone. Use `vercel dev` when checking the Vercel functions locally. Run `node --test tests/piece-sharing.test.mjs tests/share-function.test.mjs` to check metadata, public access, generated images, font choices, and a cold start from compiled JavaScript without accessing the live database.
+=======
+`vite` and `vite preview` run the frontend alone. Use `vercel dev` when checking the Vercel functions locally. Run `node --test tests/piece-sharing.test.mjs` to check metadata, public access, generated images and all font choices without accessing the live database.
+
+-Documentation provide from Stein this is confirmed as the last update aside on this notes and README.
+>>>>>>> 7390e59e286cfae69f7ef8c54b6875285c0b6363
